@@ -1,0 +1,59 @@
+{
+  "payload": {
+    "hasMore": true,
+    "currentPage": 1,
+    "nextPage": 2,
+    "recommendedJobs": [],
+    "trendingKeywords": [],
+    "jobs": [
+      {
+        "id": 41246,
+        "name": "Lead Software Engineer",
+        "path": "/companies/aifian/jobs/41246",
+        "salary": "NT$ 1,800,000 - 2,500,000 (年薪)",
+        "lastActiveAt": "一天內更新",
+        "location": "臺北市",
+        "companyId": 295,
+        "tags": [],
+        "company": {
+          "id": 295,
+          "path": "/companies/aifian",
+          "brand": "AIFIAN",
+          "logo": "https://s3cdn.yourator.co/companies/logos/000/000/295/default/8efe8c0e331ff34eb32272f5e1274f0b47033787.png",
+          "banner": "https://s3cdn.yourator.co/banners/banners/000/000/361/medium/eb676bdcab58dd4bdbd8b512b22c09b01968d8ce.png",
+          "badges": ["verified"],
+          "bannerUrl": "https://s3cdn.yourator.co/banners/banners/000/000/361/medium/eb676bdcab58dd4bdbd8b512b22c09b01968d8ce.png",
+          "canThirdPartyUrl": false,
+          "enName": "aifian"
+        },
+        "thirdPartyUrl": null,
+        "follow": false,
+        "externalSource": null
+      },
+      {
+        "id": 46192,
+        "name": "Business Operations Manager, US Market",
+        "path": "/companies/aifian/jobs/46192",
+        "salary": "面議（經常性薪資達4萬元）",
+        "lastActiveAt": "一天內更新",
+        "location": "臺北市",
+        "companyId": 295,
+        "tags": [],
+        "company": {
+          "id": 295,
+          "path": "/companies/aifian",
+          "brand": "AIFIAN",
+          "logo": "https://s3cdn.yourator.co/companies/logos/000/000/295/default/8efe8c0e331ff34eb32272f5e1274f0b47033787.png",
+          "banner": "https://s3cdn.yourator.co/banners/banners/000/000/361/medium/eb676bdcab58dd4bdbd8b512b22c09b01968d8ce.png",
+          "badges": ["verified"],
+          "bannerUrl": "https://s3cdn.yourator.co/banners/banners/000/000/361/medium/eb676bdcab58dd4bdbd8b512b22c09b01968d8ce.png",
+          "canThirdPartyUrl": false,
+          "enName": "aifian"
+        },
+        "thirdPartyUrl": null,
+        "follow": false,
+        "externalSource": null
+      }
+    ]
+  }
+}

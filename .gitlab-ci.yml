@@ -1,0 +1,95 @@
+# 需要的 CI/CD 變數（GitLab project Settings > CI/CD > Variables）：
+#   K8S_REPO_URL          - k8s repo 的 clone URL（含認證，或搭配 deploy token）
+#   K8S_REPO_DEPLOY_TOKEN - 有 write 權限的 GitLab deploy token / PAT
+# CI_REGISTRY / CI_REGISTRY_USER / CI_REGISTRY_PASSWORD / CI_REGISTRY_IMAGE 由 GitLab 自動注入（見 architecture.md D9）。
+
+stages:
+  - test
+  - build
+  - package
+  - deploy
+
+variables:
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+
+.gradle-cache:
+  cache:
+    key: gradle-cache
+    paths:
+      - .gradle/wrapper
+      - .gradle/caches
+
+test:
+  stage: test
+  image: docker.io/library/eclipse-temurin:21-jdk
+  extends: .gradle-cache
+  script:
+    - ./gradlew test --console=plain
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - "*/build/test-results/test/TEST-*.xml"
+
+build:
+  stage: build
+  image: docker.io/library/eclipse-temurin:21-jdk
+  extends: .gradle-cache
+  script:
+    - ./gradlew :collector:bootJar :worker:bootJar :api:bootJar --console=plain
+  artifacts:
+    paths:
+      - collector/build/libs/*.jar
+      - worker/build/libs/*.jar
+      - api/build/libs/*.jar
+    expire_in: 1 hour
+
+.package:
+  stage: package
+  image:
+    name: gcr.io/kaniko-project/executor:v1.23.2-debug
+    entrypoint: [""]
+  needs: ["build"]
+  script:
+    - mkdir -p /kaniko/.docker
+    - >
+      echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')\"}}}"
+      > /kaniko/.docker/config.json
+    - >
+      /kaniko/executor
+      --context "$CI_PROJECT_DIR"
+      --dockerfile "$CI_PROJECT_DIR/$SERVICE/Dockerfile"
+      --destination "$CI_REGISTRY_IMAGE/$SERVICE:$CI_COMMIT_SHORT_SHA"
+      --destination "$CI_REGISTRY_IMAGE/$SERVICE:latest"
+
+package:collector:
+  extends: .package
+  variables:
+    SERVICE: collector
+
+package:worker:
+  extends: .package
+  variables:
+    SERVICE: worker
+
+package:api:
+  extends: .package
+  variables:
+    SERVICE: api
+
+deploy:update-image-tags:
+  stage: deploy
+  image: docker.io/library/alpine/git:latest
+  needs: ["package:collector", "package:worker", "package:api"]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  script:
+    - git clone "https://gitlab-ci-token:${K8S_REPO_DEPLOY_TOKEN}@${K8S_REPO_URL}" k8s-repo
+    - cd k8s-repo/apps/job-radar
+    - sed -i "s#image: .*/collector:.*#image: ${CI_REGISTRY_IMAGE}/collector:${CI_COMMIT_SHORT_SHA}#" collector-deployment.yaml
+    - sed -i "s#image: .*/worker:.*#image: ${CI_REGISTRY_IMAGE}/worker:${CI_COMMIT_SHORT_SHA}#" worker-deployment.yaml
+    - sed -i "s#image: .*/api:.*#image: ${CI_REGISTRY_IMAGE}/api:${CI_COMMIT_SHORT_SHA}#" api-deployment.yaml
+    - git config user.email "ci@job-radar.local"
+    - git config user.name "job-radar CI"
+    - git commit -am "deploy: job-radar ${CI_COMMIT_SHORT_SHA}"
+    - git push origin HEAD:main

@@ -1,0 +1,41 @@
+{
+  "@context": "https://schema.org/",
+  "@type": "JobPosting",
+  "title": "Lead Software Engineer",
+  "description": "<h2><strong>What You&#39;ll Do</strong></h2><br><br><ul><br>\t<li><strong>Lead the technical strategy</strong>&nbsp;for complex, large-scale systems, ensuring scalability, reliability, and long-term maintainability.</li><br>\t<li><strong>Own end-to-end delivery</strong>&nbsp;of critical projects, proactively identifying risks, resolving dependencies, and unblocking the team.</li><br>\t<li><strong>Design and optimize architectures</strong>&nbsp;that align with organizational goals, focusing on scalability, performance, and operational excellence.</li><br>\t<li><strong>Elevate engineering standards</strong>, improving tooling, processes, and team practices to foster a culture of high code quality.</li><br>\t<li><strong>Collaborate across teams</strong>, partnering with Product, Design, and other stakeholders to align technical execution with business objectives.</li><br>\t<li><strong>Mentor and grow engineers</strong>, providing guidance, fostering knowledge sharing, and creating opportunities for development.</li><br></ul><br><br><br>公司地址：內湖區瑞光路335號",
+  "identifier": {
+    "@type": "PropertyValue",
+    "name": "諦諾智金股份有限公司",
+    "value": 41246
+  },
+  "datePosted": "2026-07-18 02:00:09 +0800",
+  "validThrough": "2112-09-03",
+  "employmentType": "FULL_TIME",
+  "hiringOrganization": {
+    "@type": "Organization",
+    "name": "AIFIAN",
+    "sameAs": "https://www.aifian.com/",
+    "logo": "https://s3cdn.yourator.co/companies/logos/000/000/295/thumb/ccd29cd08cd515aa120503a8da742cde95c52947.png"
+  },
+  "jobLocation": {
+    "@type": "Place",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "內湖區瑞光路335號",
+      "addressLocality": "臺北市",
+      "addressRegion": "臺北市",
+      "addressCountry": "TW"
+    }
+  },
+  "baseSalary": {
+    "@type": "MonetaryAmount",
+    "currency": "TWD",
+    "value": {
+      "@type": "QuantitativeValue",
+      "unitText": "YEAR",
+      "minValue": 1800000,
+      "maxValue": 2500000,
+      "value": 2150000
+    }
+  }
+}

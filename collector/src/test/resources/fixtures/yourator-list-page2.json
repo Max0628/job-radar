@@ -1,0 +1,35 @@
+{
+  "payload": {
+    "hasMore": false,
+    "currentPage": 2,
+    "nextPage": null,
+    "recommendedJobs": [],
+    "trendingKeywords": [],
+    "jobs": [
+      {
+        "id": 4159,
+        "name": "Site Reliability Engineer",
+        "path": "/companies/example/jobs/4159",
+        "salary": "面議",
+        "lastActiveAt": "一週內更新",
+        "location": "臺北市",
+        "companyId": 100,
+        "tags": [],
+        "company": {
+          "id": 100,
+          "path": "/companies/example",
+          "brand": "Example Co",
+          "logo": "https://s3cdn.yourator.co/companies/logos/example.png",
+          "banner": "https://s3cdn.yourator.co/banners/example.png",
+          "badges": [],
+          "bannerUrl": "https://s3cdn.yourator.co/banners/example.png",
+          "canThirdPartyUrl": false,
+          "enName": "example"
+        },
+        "thirdPartyUrl": null,
+        "follow": false,
+        "externalSource": null
+      }
+    ]
+  }
+}

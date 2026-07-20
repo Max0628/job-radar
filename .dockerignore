@@ -1,0 +1,6 @@
+.git
+.gradle
+openspec
+docs
+*.md
+docker-compose.yml
