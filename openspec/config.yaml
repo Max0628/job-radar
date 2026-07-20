@@ -1,0 +1,23 @@
+schema: spec-driven
+
+context: |
+  job-radar：個人用職缺聚合工具（爬蟲 → Kafka → PostgreSQL → Discord 推播）。
+  技術棧：Java 21 + Spring Boot 3.x（virtual threads，禁用 WebFlux）、
+  Gradle multi-module（Kotlin DSL）、Kafka 單 broker KRaft、PostgreSQL、Flyway。
+  部署：homelab K8s（~/projects/homelab-infra），GitLab CI → 自架 Container Registry
+  → ArgoCD GitOps；secrets 用 Sealed Secrets；觀測性走 Micrometer/Prometheus + Loki。
+
+  【必讀】所有架構決策（含被否決選項）在 docs/architecture.md 的決策記錄 D1–D12，
+  提案與設計不得與其牴觸；要推翻決策先更新該文件。
+
+  硬規則：所有 Kafka consumer 必須冪等（at-least-once）；訊息 envelope 定義於
+  common module，改格式必須遞增 schemaVersion；對外部平台同來源並發 ≤2 且加間隔、
+  429 退避；JVM -Xmx ≤ 512MB；DB schema 只透過 Flyway 變更。
+
+rules:
+  proposal:
+    - 必須包含「不做」（Non-goals）章節
+    - 引用 docs/architecture.md 的決策編號（D1–D12）而不是重述理由
+  tasks:
+    - 任務granularity以單次 session 可完成為準，並標注跨 repo 的任務（k8s repo、homelab-infra）
+    - 外部平台 API 調查類任務的產出必須寫回 change 的 design.md 附錄
