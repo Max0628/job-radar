@@ -12,6 +12,10 @@ spring:
 server:
   port: 8083
 
+api:
+  cors:
+    allowed-origins: ${API_CORS_ALLOWED_ORIGINS:http://localhost:5173}
+
 management:
   endpoints:
     web:
