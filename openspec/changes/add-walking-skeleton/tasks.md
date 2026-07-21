@@ -6,8 +6,15 @@
       裝進三台 k8s 節點信任庫 → `update-ca-certificates` → 重啟 containerd。已 syntax-check 通過
 - [ ] 1.1b 【需使用者確認】對真實三個節點執行 1.1a 的 playbook，驗證節點可拉
       `registry.192.168.100.200.nip.io` 的 image（見 spec 001 附錄「執行環境探查」）
-- [ ] 1.2 【需使用者確認】cluster 安裝 Sealed Secrets controller（helm）
-- [ ] 1.3 【需使用者操作】GitLab 建立 `job-radar` project，確認 Runner 與 Registry push 可用
+- [x] 1.2 cluster 安裝 Sealed Secrets controller——**實作偏離**：這台機器沒裝 helm，
+      改用官方 GitHub release 的 `controller.yaml`（v0.38.4）直接 `kubectl apply`，
+      效果等同 helm 安裝。已驗證：controller pod Running（`kube-system` namespace，
+      跑在 worker1）、CRD `sealedsecrets.bitnami.com` 存在、`kubeseal` CLI（同版本，
+      裝在 `~/.local/bin`）能連上 controller 成功拿到加密公鑰
+- [x] 1.3 GitLab 建立 `job-radar` project（`homelab/job-radar`），確認 Runner 可用。
+      `origin` 改指向 GitLab（原 GitHub remote 改名為 `github`，設定為自動 push mirror
+      備份，比照 `k8s` repo 的模式）。已推送 `master`，GitLab 端確認為預設分支；
+      GitHub mirror 同步驗證成功（`update_status: finished`，無錯誤）
 - [x] 1.4 建立 Discord webhook。已用真實 webhook 跑過 worker 驗證：5 則真實新職缺通知
       成功送達（雙保險：webhook URL 只當 shell 環境變數傳入、未寫入任何檔案，
       驗證後已停止程序並清掉暫存 log）。正式部署時仍要走 Secret（見 `secrets.example.yaml`）
