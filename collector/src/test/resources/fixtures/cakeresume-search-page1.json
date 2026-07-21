@@ -1,0 +1,49 @@
+{
+  "total_entries": 3,
+  "data": [
+    {
+      "path": "engineering-department-backend-engineer",
+      "title": "【工程部】後端工程師 Backend Engineer",
+      "description": "At CMoney, our mission is to assist people in their lifelong investment.",
+      "locations": ["板橋區, 新北市, 台灣"],
+      "salary": {
+        "min": null,
+        "max": null,
+        "currency": "TWD",
+        "type": "per_month"
+      },
+      "seniority_level": "entry_level",
+      "job_type": "full_time",
+      "number_of_openings": 3,
+      "page": {
+        "path": "cmoney",
+        "name": "CMoney全曜財經資訊股份有限公司"
+      },
+      "lang_name": "English",
+      "min_work_exp_year": 2,
+      "content_updated_at": "2026-07-20T07:18:33.164382Z"
+    },
+    {
+      "path": "backend-engineer-1",
+      "title": "Backend Engineer / 後端工程師",
+      "description": "We run one of the highest-traffic social and content platforms in the region.",
+      "locations": ["台北市, 台灣"],
+      "salary": {
+        "min": "1250000",
+        "max": "2000000",
+        "currency": "TWD",
+        "type": "per_year"
+      },
+      "seniority_level": "mid_senior_level",
+      "job_type": "full_time",
+      "number_of_openings": 1,
+      "page": {
+        "path": "swag",
+        "name": "SWAG"
+      },
+      "lang_name": "English",
+      "min_work_exp_year": 3,
+      "content_updated_at": "2026-07-20T02:02:23.401928Z"
+    }
+  ]
+}

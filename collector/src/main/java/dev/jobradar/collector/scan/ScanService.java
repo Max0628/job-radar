@@ -50,7 +50,14 @@ public class ScanService {
 
             for (DiscoveredJob job : result.discovered()) {
                 DiscoveredEnvelope envelope = new DiscoveredEnvelope(
-                        query.source(), job.sourceJobId(), scrapedAt, job.url(), job.payload());
+                        query.source(),
+                        job.sourceJobId(),
+                        scrapedAt,
+                        job.url(),
+                        job.needsDetail(),
+                        job.detailUrl(),
+                        job.payload()
+                );
                 String key = query.source() + ":" + job.sourceJobId();
                 kafkaTemplate.send(Topics.JOBS_DISCOVERED, key, envelope);
             }

@@ -50,12 +50,20 @@ public class YouratorListScraper implements JobListScraper {
 
     @Override
     public ScanResult scan(SearchQuery query) {
+        if (query.categories() != null && query.categories().size() == 1) {
+            log.warn("Yourator query id={} has exactly 1 category ({}); single-value category[] "
+                            + "filtering is unreliable on this API (confirmed via manual verification: "
+                            + "some categories are silently ignored when sent alone). Consider bundling "
+                            + "at least 2 categories per query.",
+                    query.id(), query.categories().get(0));
+        }
+
         List<DiscoveredJob> discovered = new ArrayList<>();
         int page = 1;
         boolean hasMore = true;
 
         while (hasMore && page <= query.maxPages()) {
-            JsonNode body = fetchPage(query.keyword(), page);
+            JsonNode body = fetchPage(query.keyword(), query.location(), query.categories(), page);
             JsonNode payload = body.path("payload");
 
             for (JsonNode item : payload.path("jobs")) {
@@ -76,16 +84,33 @@ public class YouratorListScraper implements JobListScraper {
         return new ScanResult(discovered, page - 1);
     }
 
-    private JsonNode fetchPage(String keyword, int page) {
+    private JsonNode fetchPage(String keyword, String areaCode, List<String> categories, int page) {
         int attempt = 0;
         while (true) {
             attempt++;
             try {
+                // 正確參數是 term[]/area[]/category[]/sort，不是 keyword（見 design.md 側錄
+                // 更正紀錄，keyword 對這支 API 完全無效，送什麼都回同一批未過濾結果）。
+                // term[] 只在 keyword 非空白時送出——分類篩選（category[]）已足夠精準時，
+                // keyword 通常留空，不強迫帶一個空字串當關鍵字。
                 String body = restClient.get()
-                        .uri(uriBuilder -> uriBuilder.path("/api/v4/jobs/")
-                                .queryParam("keyword", keyword)
-                                .queryParam("page", page)
-                                .build())
+                        .uri(uriBuilder -> {
+                            uriBuilder.path("/api/v4/jobs/")
+                                    .queryParam("sort", "most_related")
+                                    .queryParam("page", page);
+                            if (keyword != null && !keyword.isBlank()) {
+                                uriBuilder.queryParam("term[]", keyword);
+                            }
+                            if (areaCode != null && !areaCode.isBlank()) {
+                                uriBuilder.queryParam("area[]", areaCode);
+                            }
+                            if (categories != null) {
+                                for (String category : categories) {
+                                    uriBuilder.queryParam("category[]", category);
+                                }
+                            }
+                            return uriBuilder.build();
+                        })
                         .retrieve()
                         .body(String.class);
                 return objectMapper.readTree(body);
