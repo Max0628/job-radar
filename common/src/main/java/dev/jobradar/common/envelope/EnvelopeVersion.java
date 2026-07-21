@@ -2,7 +2,7 @@ package dev.jobradar.common.envelope;
 
 public final class EnvelopeVersion {
 
-    public static final int CURRENT = 1;
+    public static final int CURRENT = 2;
 
     private EnvelopeVersion() {
     }
