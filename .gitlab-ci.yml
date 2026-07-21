@@ -82,14 +82,14 @@ deploy:update-image-tags:
   image: docker.io/library/alpine/git:latest
   needs: ["package:collector", "package:worker", "package:api"]
   rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "master"'
   script:
     - git clone "https://gitlab-ci-token:${K8S_REPO_DEPLOY_TOKEN}@${K8S_REPO_URL}" k8s-repo
     - cd k8s-repo/apps/job-radar
-    - sed -i "s#image: .*/collector:.*#image: ${CI_REGISTRY_IMAGE}/collector:${CI_COMMIT_SHORT_SHA}#" collector-deployment.yaml
-    - sed -i "s#image: .*/worker:.*#image: ${CI_REGISTRY_IMAGE}/worker:${CI_COMMIT_SHORT_SHA}#" worker-deployment.yaml
-    - sed -i "s#image: .*/api:.*#image: ${CI_REGISTRY_IMAGE}/api:${CI_COMMIT_SHORT_SHA}#" api-deployment.yaml
+    - 'sed -i "s#image: .*/collector:.*#image: ${CI_REGISTRY_IMAGE}/collector:${CI_COMMIT_SHORT_SHA}#" collector-deployment.yaml'
+    - 'sed -i "s#image: .*/worker:.*#image: ${CI_REGISTRY_IMAGE}/worker:${CI_COMMIT_SHORT_SHA}#" worker-deployment.yaml'
+    - 'sed -i "s#image: .*/api:.*#image: ${CI_REGISTRY_IMAGE}/api:${CI_COMMIT_SHORT_SHA}#" api-deployment.yaml'
     - git config user.email "ci@job-radar.local"
     - git config user.name "job-radar CI"
-    - git commit -am "deploy: job-radar ${CI_COMMIT_SHORT_SHA}"
+    - 'git commit -am "deploy: job-radar ${CI_COMMIT_SHORT_SHA}"'
     - git push origin HEAD:main
