@@ -1,0 +1,22 @@
+{
+  "path": "backend-engineer-1",
+  "title": "Backend Engineer / 後端工程師",
+  "description": "We run one of the highest-traffic social and content platforms in the region.",
+  "locations": ["台北市, 台灣"],
+  "salary": {
+    "min": "1250000",
+    "max": "2000000",
+    "currency": "TWD",
+    "type": "per_year"
+  },
+  "seniority_level": "mid_senior_level",
+  "job_type": "full_time",
+  "number_of_openings": 1,
+  "page": {
+    "path": "swag",
+    "name": "SWAG"
+  },
+  "lang_name": "English",
+  "min_work_exp_year": 3,
+  "content_updated_at": "2026-07-20T02:02:23.401928Z"
+}

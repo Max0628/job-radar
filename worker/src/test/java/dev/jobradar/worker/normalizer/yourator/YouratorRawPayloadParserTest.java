@@ -26,6 +26,10 @@ class YouratorRawPayloadParserTest {
         assertThat(normalized.salaryMax()).isEqualTo(2_500_000L);
         assertThat(normalized.salaryCurrency()).isEqualTo("TWD");
         assertThat(normalized.description()).contains("Lead the technical strategy");
+        // fixture 的 streetAddress 是「內湖區瑞光路335號」、addressLocality 是「臺北市」
+        // （見端到端驗證抓到的真實資料，臺 要正規化成 台）
+        assertThat(normalized.city()).isEqualTo("台北市");
+        assertThat(normalized.district()).isEqualTo("內湖區");
     }
 
     @Test
@@ -39,6 +43,76 @@ class YouratorRawPayloadParserTest {
         assertThat(normalized.salaryMin()).isNull();
         assertThat(normalized.salaryMax()).isNull();
         assertThat(normalized.salaryCurrency()).isNull();
+        assertThat(normalized.city()).isNull();
+        assertThat(normalized.district()).isNull();
+    }
+
+    @Test
+    void extractsDistrictWhenCityNamePrecedesItInStreetAddress() throws Exception {
+        // 真實資料：區不在字串最前面，前面還有縣市名稱（見端到端驗證抓到的真實職缺）
+        JsonNode payload = objectMapper.readTree("""
+                {
+                  "title": "Sr. Backend Engineer",
+                  "hiringOrganization": {"name": "TutorABC"},
+                  "description": "...",
+                  "jobLocation": {
+                    "address": {
+                      "streetAddress": "臺北市中正區和平西路1段3號2樓（古亭8號出口）",
+                      "addressLocality": "臺北市"
+                    }
+                  }
+                }
+                """);
+
+        NormalizedJob normalized = parser.parse(payload);
+
+        assertThat(normalized.city()).isEqualTo("台北市");
+        assertThat(normalized.district()).isEqualTo("中正區");
+    }
+
+    @Test
+    void extractsDistrictWithoutCityPrefixInStreetAddress() throws Exception {
+        // 真實資料：區在最前面，沒有縣市前綴（見端到端驗證抓到的真實職缺）
+        JsonNode payload = objectMapper.readTree("""
+                {
+                  "title": "ACCUPASS Backend",
+                  "hiringOrganization": {"name": "ACCUPASS"},
+                  "description": "...",
+                  "jobLocation": {
+                    "address": {
+                      "streetAddress": "中山區中山北路二段106之2號6樓",
+                      "addressLocality": "臺北市"
+                    }
+                  }
+                }
+                """);
+
+        NormalizedJob normalized = parser.parse(payload);
+
+        assertThat(normalized.city()).isEqualTo("台北市");
+        assertThat(normalized.district()).isEqualTo("中山區");
+    }
+
+    @Test
+    void leavesDistrictNullWhenStreetAddressHasNoDistrictPattern() throws Exception {
+        JsonNode payload = objectMapper.readTree("""
+                {
+                  "title": "Remote Role",
+                  "hiringOrganization": {"name": "Acme"},
+                  "description": "...",
+                  "jobLocation": {
+                    "address": {
+                      "streetAddress": "Remote",
+                      "addressLocality": "臺北市"
+                    }
+                  }
+                }
+                """);
+
+        NormalizedJob normalized = parser.parse(payload);
+
+        assertThat(normalized.city()).isEqualTo("台北市");
+        assertThat(normalized.district()).isNull();
     }
 
     private String fixture(String name) throws Exception {

@@ -1,5 +1,6 @@
 package dev.jobradar.worker.normalizer;
 
+import dev.jobradar.common.db.PgJson;
 import java.sql.Timestamp;
 import java.time.Instant;
 import org.springframework.jdbc.core.simple.JdbcClient;
