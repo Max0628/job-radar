@@ -36,3 +36,7 @@ collector:
     jitter-seconds: 300
     user-agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 job-radar/0.1"
     request-interval-millis: 1000
+    # 台灣時間活躍掃描時段（24 小時制，含頭不含尾），避開半夜這種不自然的流量模式，
+    # 降低被平台判定為機器人的風險（見 ScanScheduler 的說明）
+    active-hours-start: 8
+    active-hours-end: 23

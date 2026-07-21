@@ -11,6 +11,7 @@ import dev.jobradar.collector.scan.CollectorScanProperties;
 import dev.jobradar.collector.scan.ScanResult;
 import dev.jobradar.common.domain.SearchQuery;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpMethod;
@@ -32,9 +33,9 @@ class YouratorListScraperTest {
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess(fixture("yourator-list-page2.json"), MediaType.APPLICATION_JSON));
 
-        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0);
+        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
         YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder);
-        SearchQuery query = new SearchQuery(1, "yourator", "devops", 10, 120, true);
+        SearchQuery query = new SearchQuery(1, "yourator", "devops", "TPE", List.of(), 10, 120, true);
 
         ScanResult result = scraper.scan(query);
 
@@ -56,9 +57,9 @@ class YouratorListScraperTest {
         server.expect(requestTo(containsString("page=1")))
                 .andRespond(withSuccess(fixture("yourator-list-page1.json"), MediaType.APPLICATION_JSON));
 
-        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0);
+        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
         YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder);
-        SearchQuery query = new SearchQuery(1, "yourator", "devops", 1, 120, true);
+        SearchQuery query = new SearchQuery(1, "yourator", "devops", "TPE", List.of(), 1, 120, true);
 
         ScanResult result = scraper.scan(query);
 
