@@ -66,12 +66,17 @@ build:
     - >
       echo "{\"auths\":{\"$CI_REGISTRY\":{\"auth\":\"$(printf '%s:%s' "$CI_REGISTRY_USER" "$CI_REGISTRY_PASSWORD" | base64 | tr -d '\n')\"}}}"
       > /kaniko/.docker/config.json
+    # registry.192.168.100.200.nip.io 是 homelab 自己簽的內部 PKI（見 architecture.md），
+    # kaniko 這個 image 沒有這張 Root CA，直接推會 x509 驗證失敗。用
+    # --registry-certificate 明確告訴 kaniko 這個 host 要信哪張憑證（$HOMELAB_CA_CERT 是
+    # CI/CD file 類型變數，值就是 Root CA 的 PEM）。
     - >
       /kaniko/executor
       --context "$CI_PROJECT_DIR"
       --dockerfile "$CI_PROJECT_DIR/$SERVICE/Dockerfile"
       --destination "$CI_REGISTRY_IMAGE/$SERVICE:$CI_COMMIT_SHORT_SHA"
       --destination "$CI_REGISTRY_IMAGE/$SERVICE:latest"
+      --registry-certificate "$CI_REGISTRY=$HOMELAB_CA_CERT"
 
 package:collector:
   extends: .package
