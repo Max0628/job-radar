@@ -102,6 +102,9 @@ deploy:update-image-tags:
   script:
     # alpine/git 這個 image 一樣不認得 homelab 的內部 CA（見 kaniko 那步的說明），
     # git clone gitlab.192.168.100.200.nip.io 會 x509 驗證失敗，先裝進系統信任庫。
+    # 這個 image 沒有預裝 ca-certificates 套件（update-ca-certificates 用到的目錄
+    # 不存在），要先裝。
+    - apk add --no-cache ca-certificates
     - cp "$HOMELAB_CA_CERT" /usr/local/share/ca-certificates/homelab-root-ca.crt
     - update-ca-certificates
     # K8S_REPO_DEPLOY_TOKEN 是 homelab/k8s 專案自己的 Project Access Token（write_repository），
