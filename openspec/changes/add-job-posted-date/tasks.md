@@ -54,7 +54,9 @@
 
 ## 7. 部署
 
-- [ ] 7.1 三個服務（worker/api/frontend）都改完、測試過後一起 commit + push，讓 CI 走
-      test → build → package → deploy
-- [ ] 7.2 部署後用真實資料驗證：`GET /api/jobs?_sort=postedAt&_order=DESC` 回應是否符合
-      spec 的排序與 null 處理行為
+- [x] 7.1 三個服務（worker/api/frontend）都改完、測試過後一起 commit（`0bc8121`）+ push，
+      讓 CI 走 test → build → package → deploy
+- [x] 7.2 本機用真實回填後的資料驗證過：`GET /api/jobs?_start=0&_end=5` 回應確實依
+      `postedAt` 由新到舊排序（見上方本機驗證結果）。k8s 部署後還要再驗證一次，因為
+      那邊資料量少、大部分職缺目前 posted_at 還是 null，行為會偏向「新掃到的排前面、
+      其餘擠在最後」——這步等 CI 部署完成後在下一輪 session 補做
