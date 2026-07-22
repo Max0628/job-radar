@@ -40,7 +40,7 @@ const jobFilters = [
 export const JobList = () => (
   <List
     filters={jobFilters}
-    sort={{ field: "lastSeenAt", order: "DESC" }}
+    sort={{ field: "postedAt", order: "DESC" }}
     perPage={12}
     pagination={<JobPagination />}
     component="div"

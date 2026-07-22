@@ -41,7 +41,7 @@ public class JobController {
             @RequestParam(required = false) String status,
             @RequestParam(name = "_start", defaultValue = "0") int start,
             @RequestParam(name = "_end", defaultValue = "20") int end,
-            @RequestParam(name = "_sort", defaultValue = "lastSeenAt") String sort,
+            @RequestParam(name = "_sort", defaultValue = "postedAt") String sort,
             @RequestParam(name = "_order", defaultValue = "DESC") String order
     ) {
         JobSearchFilter filter = new JobSearchFilter(q, district, city, salaryMin, salaryMax,

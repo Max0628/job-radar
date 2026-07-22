@@ -30,6 +30,10 @@ export interface Job extends RaRecord {
   numberOfOpenings: number | null;
   city: string | null;
   district: string | null;
+  // 平台回報的真實職缺日期（Yourator datePosted / CakeResume content_updated_at），
+  // 可能為 null（解析失敗或既有資料尚未回填）。跟下面的 firstSeenAt/lastSeenAt
+  // 是我們自己的掃描時間戳不同語意，見 add-job-posted-date/design.md
+  postedAt: string | null;
   firstSeenAt: string;
   lastSeenAt: string;
   isFavorited: boolean;

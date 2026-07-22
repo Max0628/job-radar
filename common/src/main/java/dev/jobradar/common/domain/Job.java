@@ -26,6 +26,7 @@ public record Job(
         Integer numberOfOpenings,
         String city,
         String district,
+        Instant postedAt,
         Instant firstSeenAt,
         Instant lastSeenAt
 ) {

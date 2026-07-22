@@ -3,8 +3,14 @@ package dev.jobradar.worker.normalizer.yourator;
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.jobradar.worker.normalizer.NormalizedJob;
 import dev.jobradar.worker.normalizer.RawPayloadParser;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -14,7 +20,13 @@ import org.springframework.stereotype.Component;
 @Component
 public class YouratorRawPayloadParser implements RawPayloadParser {
 
+    private static final Logger log = LoggerFactory.getLogger(YouratorRawPayloadParser.class);
     private static final String SOURCE = "yourator";
+
+    // datePosted 格式如 "2026-07-18 02:00:09 +0800"：空格分隔、offset 無冒號，非標準
+    // ISO-8601，需要自訂 pattern（見 add-job-posted-date/design.md）
+    private static final DateTimeFormatter DATE_POSTED_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss Z");
 
     // 區級資訊只存在於 streetAddress 這個自由文字欄位，位置不固定（見 job-location-extraction
     // spec）。字元類排除「市/縣/區」本身，避免像「臺北市中正區」這種字串誤抓成「市中正區」
@@ -47,8 +59,26 @@ public class YouratorRawPayloadParser implements RawPayloadParser {
         String district = extractDistrict(payload.path("jobLocation").path("address")
                 .path("streetAddress").asText(null));
 
+        Instant postedAt = parseDatePosted(payload.path("datePosted").asText(null));
+
         return new NormalizedJob(title, company, salaryMin, salaryMax, salaryCurrency, description,
-                employmentType, null, null, null, null, null, city, district);
+                employmentType, null, null, null, null, null, city, district, postedAt);
+    }
+
+    /**
+     * 格式跑掉時吞掉例外、回傳 null，不讓單一欄位解析失敗拖垮整筆職缺的正規化
+     * （見 design.md，跟 CakeResumeRawPayloadParser.parseSalaryValue 同一個設計原則）。
+     */
+    private Instant parseDatePosted(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            return OffsetDateTime.parse(text, DATE_POSTED_FORMAT).toInstant();
+        } catch (DateTimeParseException e) {
+            log.warn("Failed to parse Yourator datePosted value \"{}\"", text, e);
+            return null;
+        }
     }
 
     /**

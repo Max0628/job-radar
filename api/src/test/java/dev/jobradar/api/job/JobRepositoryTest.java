@@ -64,12 +64,20 @@ class JobRepositoryTest {
     private void insertJob(String source, String sourceJobId, String title, String company,
                             Long salaryMin, Long salaryMax, String jobType, String city,
                             String district, String status) {
+        insertJob(source, sourceJobId, title, company, salaryMin, salaryMax, jobType, city,
+                district, status, null);
+    }
+
+    private void insertJob(String source, String sourceJobId, String title, String company,
+                            Long salaryMin, Long salaryMax, String jobType, String city,
+                            String district, String status, Instant postedAt) {
         jdbcClient.sql("""
                         INSERT INTO jobs (source, source_job_id, title, company, salary_min, salary_max,
-                                          url, content_hash, status, job_type, city, district,
+                                          url, content_hash, status, job_type, city, district, posted_at,
                                           first_seen_at, last_seen_at)
                         VALUES (:source, :sourceJobId, :title, :company, :salaryMin, :salaryMax,
-                                :url, :contentHash, :status, :jobType, :city, :district, :seenAt, :seenAt)
+                                :url, :contentHash, :status, :jobType, :city, :district, :postedAt,
+                                :seenAt, :seenAt)
                         """)
                 .param("source", source)
                 .param("sourceJobId", sourceJobId)
@@ -83,6 +91,7 @@ class JobRepositoryTest {
                 .param("jobType", jobType)
                 .param("city", city)
                 .param("district", district)
+                .param("postedAt", postedAt == null ? null : Timestamp.from(postedAt))
                 .param("seenAt", Timestamp.from(Instant.now()))
                 .update();
     }
@@ -169,5 +178,40 @@ class JobRepositoryTest {
         Optional<Job> result = repository.findById(999_999L);
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    void unmappedSortFallsBackToPostedAtDescendingWithNullsLast() {
+        // JobRepository.search 收到的 sort 其實不會是 null——controller 的 _sort 有
+        // defaultValue = "postedAt"，null 永遠到不了這裡。這裡改用一個不在 SORTABLE_COLUMNS
+        // 映射表裡的鍵，驗證 getOrDefault fallback 真的落到 posted_at 且正確處理 null 值。
+        insertJob("yourator", "1", "Old But Dated", "Acme", null, null, null, null, null, "ACTIVE",
+                Instant.parse("2026-01-01T00:00:00Z"));
+        insertJob("yourator", "2", "New Job", "Acme", null, null, null, null, null, "ACTIVE",
+                Instant.parse("2026-07-20T00:00:00Z"));
+        insertJob("yourator", "3", "Undated Job", "Acme", null, null, null, null, null, "ACTIVE",
+                null);
+
+        List<Job> results = repository.search(
+                new JobSearchFilter(null, null, null, null, null, null, null, null),
+                0, 20, "not-a-real-sort-key", "DESC");
+
+        assertThat(results).extracting(Job::title)
+                .containsExactly("New Job", "Old But Dated", "Undated Job");
+    }
+
+    @Test
+    void explicitPostedAtSortAlsoPlacesNullsLast() {
+        insertJob("yourator", "1", "Dated Job", "Acme", null, null, null, null, null, "ACTIVE",
+                Instant.parse("2026-07-20T00:00:00Z"));
+        insertJob("yourator", "2", "Undated Job", "Acme", null, null, null, null, null, "ACTIVE",
+                null);
+
+        List<Job> results = repository.search(
+                new JobSearchFilter(null, null, null, null, null, null, null, null),
+                0, 20, "postedAt", "DESC");
+
+        assertThat(results).extracting(Job::title)
+                .containsExactly("Dated Job", "Undated Job");
     }
 }

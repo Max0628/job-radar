@@ -28,6 +28,7 @@ public record JobResponse(
         Integer numberOfOpenings,
         String city,
         String district,
+        Instant postedAt,
         Instant firstSeenAt,
         Instant lastSeenAt,
         boolean isFavorited,
@@ -39,7 +40,7 @@ public record JobResponse(
                 job.salaryMin(), job.salaryMax(), job.salaryCurrency(), job.url(), job.status(),
                 job.employmentType(), job.seniorityLevel(), job.jobType(), job.langName(),
                 job.minWorkExpYear(), job.numberOfOpenings(), job.city(), job.district(),
-                job.firstSeenAt(), job.lastSeenAt(), favoriteId != null, favoriteId
+                job.postedAt(), job.firstSeenAt(), job.lastSeenAt(), favoriteId != null, favoriteId
         );
     }
 }

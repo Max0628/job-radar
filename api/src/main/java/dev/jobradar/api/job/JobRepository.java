@@ -24,7 +24,8 @@ public class JobRepository {
             "salaryMin", "salary_min",
             "salaryMax", "salary_max",
             "firstSeenAt", "first_seen_at",
-            "lastSeenAt", "last_seen_at"
+            "lastSeenAt", "last_seen_at",
+            "postedAt", "posted_at"
     );
 
     private final JdbcClient jdbcClient;
@@ -35,20 +36,25 @@ public class JobRepository {
 
     public List<Job> search(JobSearchFilter filter, int start, int end, String sort, String order) {
         WhereClause where = buildWhereClause(filter);
-        String column = SORTABLE_COLUMNS.getOrDefault(sort, "last_seen_at");
+        // 未指定排序時預設用 posted_at（平台真實日期）而不是 last_seen_at（我們的掃描
+        // 時間戳），見 add-job-posted-date/design.md
+        String column = SORTABLE_COLUMNS.getOrDefault(sort, "posted_at");
         String direction = "ASC".equalsIgnoreCase(order) ? "ASC" : "DESC";
+        // DESC 時 PostgreSQL 預設 NULLS FIRST，會把還沒有值的職缺（例如 posted_at 尚未
+        // 回填的既有資料）衝到最前面，跟「新的在前」的排序意圖相反，明確覆寫成 NULLS LAST
+        String nullsOrder = "DESC".equals(direction) ? "NULLS LAST" : "";
         int limit = Math.max(0, end - start);
 
         var spec = jdbcClient.sql("""
                         SELECT id, source, source_job_id, title, company, salary_min, salary_max,
                                salary_currency, url, content_hash, status, employment_type,
                                seniority_level, job_type, lang_name, min_work_exp_year,
-                               number_of_openings, city, district, first_seen_at, last_seen_at
+                               number_of_openings, city, district, posted_at, first_seen_at, last_seen_at
                         FROM jobs
                         %s
-                        ORDER BY %s %s
+                        ORDER BY %s %s %s
                         LIMIT :limit OFFSET :offset
-                        """.formatted(where.sql(), column, direction))
+                        """.formatted(where.sql(), column, direction, nullsOrder))
                 .param("limit", limit)
                 .param("offset", start);
         spec = where.bind(spec);
@@ -68,7 +74,7 @@ public class JobRepository {
                         SELECT id, source, source_job_id, title, company, salary_min, salary_max,
                                salary_currency, url, content_hash, status, employment_type,
                                seniority_level, job_type, lang_name, min_work_exp_year,
-                               number_of_openings, city, district, first_seen_at, last_seen_at
+                               number_of_openings, city, district, posted_at, first_seen_at, last_seen_at
                         FROM jobs WHERE id = :id
                         """)
                 .param("id", id)
@@ -142,6 +148,7 @@ public class JobRepository {
                 (Integer) rs.getObject("number_of_openings"),
                 rs.getString("city"),
                 rs.getString("district"),
+                rs.getTimestamp("posted_at") == null ? null : rs.getTimestamp("posted_at").toInstant(),
                 rs.getTimestamp("first_seen_at").toInstant(),
                 rs.getTimestamp("last_seen_at").toInstant()
         );

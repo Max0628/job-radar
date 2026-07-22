@@ -70,8 +70,17 @@ export const JobCard = ({ job }: { job: Job }) => {
         </Stack>
 
         <Box sx={{ mt: 1 }}>
+          {job.postedAt && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block" }}
+            >
+              上架日期：{new Date(job.postedAt).toLocaleDateString()}
+            </Typography>
+          )}
           <Typography variant="caption" color="text.secondary">
-            最後更新：{new Date(job.lastSeenAt).toLocaleDateString()}
+            最後掃描：{new Date(job.lastSeenAt).toLocaleDateString()}
           </Typography>
         </Box>
       </CardContent>

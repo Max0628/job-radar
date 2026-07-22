@@ -32,12 +32,12 @@ public class JobRepository {
                                           salary_currency, url, content_hash, attrs, status,
                                           employment_type, seniority_level, job_type, lang_name,
                                           min_work_exp_year, number_of_openings, city, district,
-                                          first_seen_at, last_seen_at)
+                                          posted_at, first_seen_at, last_seen_at)
                         VALUES (:source, :sourceJobId, :title, :company, :salaryMin, :salaryMax,
                                 :salaryCurrency, :url, :contentHash, :attrs, 'NEW',
                                 :employmentType, :seniorityLevel, :jobType, :langName,
                                 :minWorkExpYear, :numberOfOpenings, :city, :district,
-                                :seenAt, :seenAt)
+                                :postedAt, :seenAt, :seenAt)
                         ON CONFLICT (source, source_job_id) DO UPDATE SET
                             title = excluded.title,
                             company = excluded.company,
@@ -54,6 +54,7 @@ public class JobRepository {
                             number_of_openings = excluded.number_of_openings,
                             city = excluded.city,
                             district = excluded.district,
+                            posted_at = excluded.posted_at,
                             status = CASE WHEN jobs.status IN ('NEW', 'CLOSED') THEN 'ACTIVE' ELSE jobs.status END,
                             last_seen_at = excluded.last_seen_at
                         RETURNING (xmax = 0) AS inserted
@@ -76,6 +77,7 @@ public class JobRepository {
                 .param("numberOfOpenings", normalized.numberOfOpenings())
                 .param("city", normalized.city())
                 .param("district", normalized.district())
+                .param("postedAt", normalized.postedAt() == null ? null : Timestamp.from(normalized.postedAt()))
                 .param("seenAt", Timestamp.from(seenAt))
                 .query(Boolean.class)
                 .single();

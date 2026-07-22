@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.jobradar.worker.normalizer.NormalizedJob;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 
@@ -35,6 +36,7 @@ class CakeResumeRawPayloadParserTest {
         // fixture 的 locations 是 ["台北市, 台灣"]（2 段：市, 國，無區級資訊）
         assertThat(normalized.city()).isEqualTo("台北市");
         assertThat(normalized.district()).isNull();
+        assertThat(normalized.postedAt()).isEqualTo(Instant.parse("2026-07-20T02:02:23.401928Z"));
     }
 
     @Test
@@ -51,6 +53,18 @@ class CakeResumeRawPayloadParserTest {
         // fixture 的 locations 是 ["板橋區, 新北市, 台灣"]（3 段：區, 市, 國）
         assertThat(normalized.city()).isEqualTo("新北市");
         assertThat(normalized.district()).isEqualTo("板橋區");
+        assertThat(normalized.postedAt()).isEqualTo(Instant.parse("2026-07-20T07:18:33.164382Z"));
+    }
+
+    @Test
+    void returnsNullPostedAtWhenContentUpdatedAtIsUnparseable() throws Exception {
+        JsonNode payload = objectMapper.readTree("""
+                {"title": "Remote Role", "page": {"name": "Acme"}, "content_updated_at": "not-a-real-date"}
+                """);
+
+        NormalizedJob normalized = parser.parse(payload);
+
+        assertThat(normalized.postedAt()).isNull();
     }
 
     @Test

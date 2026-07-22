@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.jobradar.worker.normalizer.NormalizedJob;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 
@@ -30,6 +31,8 @@ class YouratorRawPayloadParserTest {
         // （見端到端驗證抓到的真實資料，臺 要正規化成 台）
         assertThat(normalized.city()).isEqualTo("台北市");
         assertThat(normalized.district()).isEqualTo("內湖區");
+        // fixture 的 datePosted 是 "2026-07-18 02:00:09 +0800"
+        assertThat(normalized.postedAt()).isEqualTo(Instant.parse("2026-07-17T18:00:09Z"));
     }
 
     @Test
@@ -45,6 +48,23 @@ class YouratorRawPayloadParserTest {
         assertThat(normalized.salaryCurrency()).isNull();
         assertThat(normalized.city()).isNull();
         assertThat(normalized.district()).isNull();
+        assertThat(normalized.postedAt()).isNull();
+    }
+
+    @Test
+    void returnsNullPostedAtWhenDatePostedFormatIsUnparseable() throws Exception {
+        JsonNode payload = objectMapper.readTree("""
+                {
+                  "title": "Malformed Date Role",
+                  "hiringOrganization": {"name": "Acme"},
+                  "description": "...",
+                  "datePosted": "not-a-real-date"
+                }
+                """);
+
+        NormalizedJob normalized = parser.parse(payload);
+
+        assertThat(normalized.postedAt()).isNull();
     }
 
     @Test

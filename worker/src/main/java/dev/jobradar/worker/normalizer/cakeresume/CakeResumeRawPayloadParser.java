@@ -3,6 +3,10 @@ package dev.jobradar.worker.normalizer.cakeresume;
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.jobradar.worker.normalizer.NormalizedJob;
 import dev.jobradar.worker.normalizer.RawPayloadParser;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -15,6 +19,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class CakeResumeRawPayloadParser implements RawPayloadParser {
 
+    private static final Logger log = LoggerFactory.getLogger(CakeResumeRawPayloadParser.class);
     private static final String SOURCE = "cakeresume";
 
     @Override
@@ -43,11 +48,29 @@ public class CakeResumeRawPayloadParser implements RawPayloadParser {
 
         String[] location = extractLocation(payload.path("locations"));
 
+        Instant postedAt = parseContentUpdatedAt(payload.path("content_updated_at").asText(null));
+
         // employmentType 沒有 Yourator 對應概念，CakeResume 用 job_type 表達同樣的語意，
         // 兩者不合併成單一欄位（見 design.md「欄位命名不一致」風險備註，保留平台原始語意）
         return new NormalizedJob(title, company, salaryMin, salaryMax, salaryCurrency, description,
                 null, seniorityLevel, jobType, langName, minWorkExpYear, numberOfOpenings,
-                location[0], location[1]);
+                location[0], location[1], postedAt);
+    }
+
+    /**
+     * 格式跑掉時吞掉例外、回傳 null，不讓單一欄位解析失敗拖垮整筆職缺的正規化
+     * （見 design.md）。
+     */
+    private Instant parseContentUpdatedAt(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(text);
+        } catch (DateTimeParseException e) {
+            log.warn("Failed to parse CakeResume content_updated_at value \"{}\"", text, e);
+            return null;
+        }
     }
 
     /**
