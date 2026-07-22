@@ -9,6 +9,12 @@ stages:
   - package
   - deploy
 
+# Runner 只接有打 "k8s" tag 的 job（見 runner 設定 run_untagged: false），
+# 用 default 讓所有 job 統一繼承，不用每個 job 各自重複
+default:
+  tags:
+    - k8s
+
 variables:
   GRADLE_OPTS: "-Dorg.gradle.daemon=false"
 
