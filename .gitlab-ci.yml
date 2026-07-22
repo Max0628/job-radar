@@ -95,7 +95,7 @@ package:api:
 
 deploy:update-image-tags:
   stage: deploy
-  image: docker.io/library/alpine/git:latest
+  image: docker.io/alpine/git:latest
   needs: ["package:collector", "package:worker", "package:api"]
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
