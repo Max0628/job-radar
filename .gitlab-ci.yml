@@ -100,11 +100,13 @@ deploy:update-image-tags:
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
   script:
-    - git clone "https://gitlab-ci-token:${K8S_REPO_DEPLOY_TOKEN}@${K8S_REPO_URL}" k8s-repo
+    # K8S_REPO_DEPLOY_TOKEN 是 homelab/k8s 專案自己的 Project Access Token（write_repository），
+    # 不是 $CI_JOB_TOKEN，所以用 oauth2 當 username，不是 gitlab-ci-token 那個保留字。
+    - git clone "https://oauth2:${K8S_REPO_DEPLOY_TOKEN}@${K8S_REPO_URL}" k8s-repo
     - cd k8s-repo/apps/job-radar
-    - 'sed -i "s#image: .*/collector:.*#image: ${CI_REGISTRY_IMAGE}/collector:${CI_COMMIT_SHORT_SHA}#" collector-deployment.yaml'
-    - 'sed -i "s#image: .*/worker:.*#image: ${CI_REGISTRY_IMAGE}/worker:${CI_COMMIT_SHORT_SHA}#" worker-deployment.yaml'
-    - 'sed -i "s#image: .*/api:.*#image: ${CI_REGISTRY_IMAGE}/api:${CI_COMMIT_SHORT_SHA}#" api-deployment.yaml'
+    - 'sed -i "s#image: .*/collector:.*#image: ${CI_REGISTRY_IMAGE}/collector:${CI_COMMIT_SHORT_SHA}#" collector.yaml'
+    - 'sed -i "s#image: .*/worker:.*#image: ${CI_REGISTRY_IMAGE}/worker:${CI_COMMIT_SHORT_SHA}#" worker.yaml'
+    - 'sed -i "s#image: .*/api:.*#image: ${CI_REGISTRY_IMAGE}/api:${CI_COMMIT_SHORT_SHA}#" api.yaml'
     - git config user.email "ci@job-radar.local"
     - git config user.name "job-radar CI"
     - 'git commit -am "deploy: job-radar ${CI_COMMIT_SHORT_SHA}"'
