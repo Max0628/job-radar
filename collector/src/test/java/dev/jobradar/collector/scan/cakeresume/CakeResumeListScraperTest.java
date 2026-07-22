@@ -54,7 +54,7 @@ class CakeResumeListScraperTest {
         assertThat(result.discovered().get(0).needsDetail()).isFalse();
         assertThat(result.discovered().get(0).detailUrl()).isNull();
         assertThat(result.discovered().get(0).url())
-                .isEqualTo("https://www.cake.me/jobs/engineering-department-backend-engineer");
+                .isEqualTo("https://www.cake.me/companies/cmoney/jobs/engineering-department-backend-engineer");
         assertThat(result.discovered().get(2).sourceJobId()).isEqualTo("devops-engineer-capital-layer");
 
         server.verify();

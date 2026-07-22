@@ -69,7 +69,11 @@ public class CakeResumeListScraper implements JobListScraper {
                 // path 是 CakeResume 職缺頁的 slug，本身就是全站唯一識別碼，拿來當 sourceJobId
                 String path = item.path("path").asText();
                 String sourceJobId = path;
-                String detailUrl = "https://www.cake.me/jobs/" + path;
+                // 正確網址要帶公司 slug（page.path），單用職缺 path 組出來的網址少了
+                // /companies/<slug>/ 這段，會連到錯誤頁面（實測發現，見使用者回報的
+                // site-reliability-engineer-sre-71702b 案例）
+                String companySlug = item.path("page").path("path").asText();
+                String detailUrl = "https://www.cake.me/companies/" + companySlug + "/jobs/" + path;
 
                 // CakeResume search 已含完整數據，不需 detail fetching
                 discovered.add(new DiscoveredJob(sourceJobId, detailUrl, item, false, null));
