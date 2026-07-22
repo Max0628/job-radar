@@ -100,6 +100,10 @@ deploy:update-image-tags:
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
   script:
+    # alpine/git 這個 image 一樣不認得 homelab 的內部 CA（見 kaniko 那步的說明），
+    # git clone gitlab.192.168.100.200.nip.io 會 x509 驗證失敗，先裝進系統信任庫。
+    - cp "$HOMELAB_CA_CERT" /usr/local/share/ca-certificates/homelab-root-ca.crt
+    - update-ca-certificates
     # K8S_REPO_DEPLOY_TOKEN 是 homelab/k8s 專案自己的 Project Access Token（write_repository），
     # 不是 $CI_JOB_TOKEN，所以用 oauth2 當 username，不是 gitlab-ci-token 那個保留字。
     - git clone "https://oauth2:${K8S_REPO_DEPLOY_TOKEN}@${K8S_REPO_URL}" k8s-repo
