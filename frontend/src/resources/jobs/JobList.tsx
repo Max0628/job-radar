@@ -1,11 +1,6 @@
-import {
-  List,
-  TextInput,
-  NumberInput,
-  SelectInput,
-  Pagination,
-} from "react-admin";
+import { List, TextInput, NumberInput, SelectInput } from "react-admin";
 import { JobGrid } from "./JobGrid";
+import { JobPagination } from "./JobPagination";
 
 const SOURCE_CHOICES = [
   { id: "yourator", name: "Yourator" },
@@ -47,7 +42,7 @@ export const JobList = () => (
     filters={jobFilters}
     sort={{ field: "lastSeenAt", order: "DESC" }}
     perPage={12}
-    pagination={<Pagination rowsPerPageOptions={[12, 24, 48]} />}
+    pagination={<JobPagination />}
     component="div"
   >
     <JobGrid />
