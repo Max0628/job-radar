@@ -11,6 +11,7 @@ import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -19,6 +20,9 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 @Testcontainers
+// CI 的 Runner 用 Kubernetes executor 跑 job，pod 內沒有 Docker daemon 可用，
+// 見 .gitlab-ci.yml 的 -PskipDockerTests
+@Tag("requires-docker")
 class SearchQueryRepositoryTest {
 
     @Container

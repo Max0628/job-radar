@@ -24,7 +24,13 @@ subprojects {
     }
 
     tasks.withType<Test> {
-        useJUnitPlatform()
+        useJUnitPlatform {
+            // 見 .gitlab-ci.yml：CI 的 Runner 用 Kubernetes executor 跑 job，沒有 Docker daemon
+            // 可用，Testcontainers 測試（@Tag("requires-docker")）在那邊連不上，跳過。
+            if (project.hasProperty("skipDockerTests")) {
+                excludeTags("requires-docker")
+            }
+        }
     }
 
     tasks.withType<JavaCompile> {

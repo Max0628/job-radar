@@ -30,12 +30,12 @@ test:
   image: docker.io/library/eclipse-temurin:21-jdk
   extends: .gradle-cache
   script:
-    # api 模組的測試全部靠 Testcontainers 起真的 Postgres，但 Runner 用 Kubernetes executor
-    # 執行 job（container runtime 是 containerd，job pod 內沒有 Docker daemon 可用），
-    # Testcontainers 連不到 Docker 會直接失敗。要支援需要幫 Runner 開 Docker-in-Docker +
-    # privileged 模式（影響這個共用 Runner 的安全邊界，不只 job-radar 一個專案的事），
-    # 目前先跳過，api 這幾支測試仍在本機（有 Docker）手動跑。
-    - ./gradlew test -x :api:test --console=plain
+    # 部分測試靠 Testcontainers 起真的 Postgres（見各測試類別的 @Tag("requires-docker")），
+    # 但 Runner 用 Kubernetes executor 執行 job（container runtime 是 containerd，job pod 內
+    # 沒有 Docker daemon 可用），這些測試會直接連不上 Docker 失敗。要支援需要幫 Runner 開
+    # Docker-in-Docker + privileged 模式（影響這個共用 Runner 的安全邊界，不只 job-radar 一個
+    # 專案的事），目前先跳過，這些測試仍在本機（有 Docker）手動跑。
+    - ./gradlew test -PskipDockerTests --console=plain
   artifacts:
     when: always
     reports:

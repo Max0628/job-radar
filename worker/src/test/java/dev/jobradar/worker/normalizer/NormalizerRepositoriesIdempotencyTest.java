@@ -8,6 +8,7 @@ import java.time.Instant;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -20,6 +21,9 @@ import org.testcontainers.utility.DockerImageName;
  * 對應 specs/scraping-pipeline/spec.md 的「訊息重放安全」scenario。
  */
 @Testcontainers
+// CI 的 Runner 用 Kubernetes executor 跑 job，pod 內沒有 Docker daemon 可用，
+// 見 .gitlab-ci.yml 的 -PskipDockerTests
+@Tag("requires-docker")
 class NormalizerRepositoriesIdempotencyTest {
 
     @Container
