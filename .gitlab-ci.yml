@@ -55,6 +55,22 @@ build:
       - api/build/libs/*.jar
     expire_in: 1 hour
 
+build:frontend:
+  stage: build
+  image: docker.io/library/node:20-alpine
+  cache:
+    key: npm-cache
+    paths:
+      - frontend/node_modules
+  script:
+    - cd frontend
+    - npm ci
+    - npm run build
+  artifacts:
+    paths:
+      - frontend/dist/
+    expire_in: 1 hour
+
 .package:
   stage: package
   image:
@@ -93,10 +109,16 @@ package:api:
   variables:
     SERVICE: api
 
+package:frontend:
+  extends: .package
+  needs: ["build:frontend"]
+  variables:
+    SERVICE: frontend
+
 deploy:update-image-tags:
   stage: deploy
   image: docker.io/alpine/git:latest
-  needs: ["package:collector", "package:worker", "package:api"]
+  needs: ["package:collector", "package:worker", "package:api", "package:frontend"]
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
   script:
@@ -114,6 +136,7 @@ deploy:update-image-tags:
     - 'sed -i "s#image: .*/collector:.*#image: ${CI_REGISTRY_IMAGE}/collector:${CI_COMMIT_SHORT_SHA}#" collector.yaml'
     - 'sed -i "s#image: .*/worker:.*#image: ${CI_REGISTRY_IMAGE}/worker:${CI_COMMIT_SHORT_SHA}#" worker.yaml'
     - 'sed -i "s#image: .*/api:.*#image: ${CI_REGISTRY_IMAGE}/api:${CI_COMMIT_SHORT_SHA}#" api.yaml'
+    - 'sed -i "s#image: .*/frontend:.*#image: ${CI_REGISTRY_IMAGE}/frontend:${CI_COMMIT_SHORT_SHA}#" frontend.yaml'
     - git config user.email "ci@job-radar.local"
     - git config user.name "job-radar CI"
     - 'git commit -am "deploy: job-radar ${CI_COMMIT_SHORT_SHA}"'
