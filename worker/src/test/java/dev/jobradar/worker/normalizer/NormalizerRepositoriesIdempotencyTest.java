@@ -75,6 +75,26 @@ class NormalizerRepositoriesIdempotencyTest {
     }
 
     @Test
+    void rescanningExistingJobUpdatesUrl() {
+        // 真實踩過的 bug：ON CONFLICT DO UPDATE 一度漏了 url 這個欄位，導致職缺重新被掃到
+        // 時，就算來源平台算出的網址不一樣了（例如格式修正後），資料庫還是卡在第一次看到
+        // 時存的舊網址，永遠不會更新（見 add-job-posted-date 之後發現的這個獨立問題）
+        JobRepository jobRepository = new JobRepository(jdbcClient);
+        NormalizedJob normalized = new NormalizedJob("Backend Engineer", "Acme", 1_000_000L, 1_400_000L, "TWD", "desc");
+        Instant seenAt = Instant.now();
+
+        jobRepository.upsert("test-source", "job-url-update", "https://example.com/old-wrong-url",
+                normalized, ContentHash.of(normalized), "{}", seenAt);
+        jobRepository.upsert("test-source", "job-url-update", "https://example.com/new-correct-url",
+                normalized, ContentHash.of(normalized), "{}", seenAt.plusSeconds(10));
+
+        String url = jdbcClient.sql("SELECT url FROM jobs WHERE source = 'test-source' AND source_job_id = 'job-url-update'")
+                .query(String.class)
+                .single();
+        assertThat(url).isEqualTo("https://example.com/new-correct-url");
+    }
+
+    @Test
     void insertingSameSnapshotTwiceIsIgnored() {
         JobSnapshotRepository snapshotRepository = new JobSnapshotRepository(jdbcClient);
         NormalizedJob normalized = new NormalizedJob("Title", "Company", 100L, 200L, "TWD", "desc");

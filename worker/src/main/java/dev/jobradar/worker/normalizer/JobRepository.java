@@ -39,6 +39,7 @@ public class JobRepository {
                                 :minWorkExpYear, :numberOfOpenings, :city, :district,
                                 :postedAt, :seenAt, :seenAt)
                         ON CONFLICT (source, source_job_id) DO UPDATE SET
+                            url = excluded.url,
                             title = excluded.title,
                             company = excluded.company,
                             salary_min = excluded.salary_min,
