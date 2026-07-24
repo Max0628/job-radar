@@ -58,6 +58,9 @@ build:
 build:frontend:
   stage: build
   image: docker.io/library/node:20-alpine
+  rules:
+    - changes:
+        - "frontend/**/*"
   cache:
     key: npm-cache
     paths:
@@ -96,29 +99,54 @@ build:frontend:
 
 package:collector:
   extends: .package
+  rules:
+    - changes:
+        - "common/**/*"
+        - "collector/**/*"
   variables:
     SERVICE: collector
 
 package:worker:
   extends: .package
+  rules:
+    - changes:
+        - "common/**/*"
+        - "worker/**/*"
   variables:
     SERVICE: worker
 
 package:api:
   extends: .package
+  rules:
+    - changes:
+        - "common/**/*"
+        - "api/**/*"
   variables:
     SERVICE: api
 
 package:frontend:
   extends: .package
   needs: ["build:frontend"]
+  rules:
+    - changes:
+        - "frontend/**/*"
   variables:
     SERVICE: frontend
 
 deploy:update-image-tags:
   stage: deploy
   image: docker.io/alpine/git:latest
-  needs: ["package:collector", "package:worker", "package:api", "package:frontend"]
+  # 四個 package job 現在都可能因為 rules: changes: 沒符合而被跳過（沒排進這次
+  # pipeline），optional: true 讓 deploy 不會因為等不到某個 job 而失敗
+  needs:
+    - job: package:collector
+      optional: true
+    - job: package:worker
+      optional: true
+    - job: package:api
+      optional: true
+    - job: package:frontend
+      optional: true
   rules:
     - if: '$CI_COMMIT_BRANCH == "master"'
   script:
@@ -129,15 +157,57 @@ deploy:update-image-tags:
     - apk add --no-cache ca-certificates
     - cp "$HOMELAB_CA_CERT" /usr/local/share/ca-certificates/homelab-root-ca.crt
     - update-ca-certificates
+    # package:* job 現在可能因為 rules: changes: 被跳過（代表那個服務的新 image 根本
+    # 沒被建置、推上 registry），這裡一定要跟著判斷「這次 commit 到底改了什麼」，只更新
+    # 真的有新 image 的服務——不然會把 image tag 指向一個從沒推上去過的版本，
+    # 部署下去直接 ImagePullBackOff。判斷邏輯刻意跟前面 package job 的 rules: changes:
+    # 用同一套路徑規則，兩邊要保持一致。
+    # 這段一定要在 git clone k8s-repo、cd 進去之前算好——cd 過去之後工作目錄就換成
+    # 另一個 repo 了，git diff 會對照錯倉庫。
+    # 抓不到 before_sha（例如全新分支的第一次 pipeline）時保守地當作全部都要更新，
+    # 不要因為判斷不出來就整批漏更新。
+    - >
+      if git diff --name-only "$CI_COMMIT_BEFORE_SHA" "$CI_COMMIT_SHA" > /tmp/changed_files.txt 2>/dev/null; then
+        CHANGED=$(cat /tmp/changed_files.txt);
+      else
+        echo "抓不到 before_sha，保守起見視為全部服務都變動過";
+        CHANGED="common/ collector/ worker/ api/ frontend/";
+      fi
     # K8S_REPO_DEPLOY_TOKEN 是 homelab/k8s 專案自己的 Project Access Token（write_repository），
     # 不是 $CI_JOB_TOKEN，所以用 oauth2 當 username，不是 gitlab-ci-token 那個保留字。
     - git clone "https://oauth2:${K8S_REPO_DEPLOY_TOKEN}@${K8S_REPO_URL}" k8s-repo
     - cd k8s-repo/apps/job-radar
-    - 'sed -i "s#image: .*/collector:.*#image: ${CI_REGISTRY_IMAGE}/collector:${CI_COMMIT_SHORT_SHA}#" collector.yaml'
-    - 'sed -i "s#image: .*/worker:.*#image: ${CI_REGISTRY_IMAGE}/worker:${CI_COMMIT_SHORT_SHA}#" worker.yaml'
-    - 'sed -i "s#image: .*/api:.*#image: ${CI_REGISTRY_IMAGE}/api:${CI_COMMIT_SHORT_SHA}#" api.yaml'
-    - 'sed -i "s#image: .*/frontend:.*#image: ${CI_REGISTRY_IMAGE}/frontend:${CI_COMMIT_SHORT_SHA}#" frontend.yaml'
+    - >
+      if echo "$CHANGED" | grep -qE '^(common/|collector/)'; then
+        sed -i "s#image: .*/collector:.*#image: ${CI_REGISTRY_IMAGE}/collector:${CI_COMMIT_SHORT_SHA}#" collector.yaml;
+        echo "collector.yaml 已更新";
+      else
+        echo "collector 這次沒變動，跳過";
+      fi
+    - >
+      if echo "$CHANGED" | grep -qE '^(common/|worker/)'; then
+        sed -i "s#image: .*/worker:.*#image: ${CI_REGISTRY_IMAGE}/worker:${CI_COMMIT_SHORT_SHA}#" worker.yaml;
+        echo "worker.yaml 已更新";
+      else
+        echo "worker 這次沒變動，跳過";
+      fi
+    - >
+      if echo "$CHANGED" | grep -qE '^(common/|api/)'; then
+        sed -i "s#image: .*/api:.*#image: ${CI_REGISTRY_IMAGE}/api:${CI_COMMIT_SHORT_SHA}#" api.yaml;
+        echo "api.yaml 已更新";
+      else
+        echo "api 這次沒變動，跳過";
+      fi
+    - >
+      if echo "$CHANGED" | grep -qE '^frontend/'; then
+        sed -i "s#image: .*/frontend:.*#image: ${CI_REGISTRY_IMAGE}/frontend:${CI_COMMIT_SHORT_SHA}#" frontend.yaml;
+        echo "frontend.yaml 已更新";
+      else
+        echo "frontend 這次沒變動，跳過";
+      fi
     - git config user.email "ci@job-radar.local"
     - git config user.name "job-radar CI"
-    - 'git commit -am "deploy: job-radar ${CI_COMMIT_SHORT_SHA}"'
+    # 有可能四個服務這次都沒變動（純文件 commit 之類的），這種情況 git commit 會因為
+    # 沒有任何改動而失敗，用 --allow-empty 讓它照樣留一筆記錄，而不是讓整條 pipeline 失敗
+    - 'git commit --allow-empty -am "deploy: job-radar ${CI_COMMIT_SHORT_SHA}"'
     - git push origin HEAD:main
