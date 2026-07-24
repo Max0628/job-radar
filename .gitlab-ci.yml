@@ -1,3 +1,6 @@
+# 驗證 Runner 的 MinIO 快取後端是否生效（test/build 這兩個沒有 rules: changes:，
+# 每次都會跑，用來測 Gradle/npm 的快取有沒有真的存到/讀回 MinIO）
+
 # 需要的 CI/CD 變數（GitLab project Settings > CI/CD > Variables）：
 #   K8S_REPO_URL          - k8s repo 的 clone URL（含認證，或搭配 deploy token）
 #   K8S_REPO_DEPLOY_TOKEN - 有 write 權限的 GitLab deploy token / PAT
