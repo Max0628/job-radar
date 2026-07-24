@@ -147,10 +147,15 @@ deploy:update-image-tags:
   # 但這樣一來，如果四個 package job 剛好全部都不存在（例如這次只改了
   # .gitlab-ci.yml 本身），deploy 的 needs 清單等於完全沒有東西要等，會立刻執行，
   # 完全不會等 test/build 這兩關——實測抓到這個問題：deploy 在 test 都還沒跑完
-  # 的時候就已經先跑完了。明確加上 test（不是 optional，一定要存在且成功），
-  # 確保不管 package 那邊有沒有東西要等，deploy 永遠不會搶在測試之前執行。
+  # 的時候就已經先跑完了。明確加上 test 跟 build（都不是 optional，一定要存在
+  # 且成功），確保不管 package 那邊有沒有東西要等，deploy 永遠不會搶在測試/
+  # 編譯結果出來之前執行——test 通過理論上已經隱含程式碼能編譯，但 build
+  # （組 bootJar）仍有極小機率因為別的原因失敗（例如打包階段的資源衝突），
+  # 兩個都要求比只要求 test 更嚴謹，也符合直覺（在 GitLab pipeline 畫面上看到
+  # deploy 比 build 先跑完，會讓人誤以為哪裡壞了）。
   needs:
     - job: test
+    - job: build
     - job: package:collector
       optional: true
     - job: package:worker
