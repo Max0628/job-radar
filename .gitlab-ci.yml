@@ -136,9 +136,18 @@ package:frontend:
 deploy:update-image-tags:
   stage: deploy
   image: docker.io/alpine/git:latest
-  # 四個 package job 現在都可能因為 rules: changes: 沒符合而被跳過（沒排進這次
-  # pipeline），optional: true 讓 deploy 不會因為等不到某個 job 而失敗
+  # 一旦 job 用 needs: 明確列出依賴，GitLab 就不再照 stage 順序等，只看 needs
+  # 清單裡的東西是否都完成。這次四個 package job 都可能因為 rules: changes:
+  # 沒符合而整個不存在於這條 pipeline（不是「跑了但被跳過」，是根本沒被排進去），
+  # optional: true 讓 deploy 不會因為等不到這種「本來就不存在」的 job 而失敗。
+  #
+  # 但這樣一來，如果四個 package job 剛好全部都不存在（例如這次只改了
+  # .gitlab-ci.yml 本身），deploy 的 needs 清單等於完全沒有東西要等，會立刻執行，
+  # 完全不會等 test/build 這兩關——實測抓到這個問題：deploy 在 test 都還沒跑完
+  # 的時候就已經先跑完了。明確加上 test（不是 optional，一定要存在且成功），
+  # 確保不管 package 那邊有沒有東西要等，deploy 永遠不會搶在測試之前執行。
   needs:
+    - job: test
     - job: package:collector
       optional: true
     - job: package:worker
