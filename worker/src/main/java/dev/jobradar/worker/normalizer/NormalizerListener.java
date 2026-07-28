@@ -4,6 +4,7 @@ import dev.jobradar.common.envelope.EventType;
 import dev.jobradar.common.envelope.JobEventEnvelope;
 import dev.jobradar.common.envelope.RawEnvelope;
 import dev.jobradar.common.kafka.Topics;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -27,19 +28,22 @@ public class NormalizerListener {
     private final JobSnapshotRepository snapshotRepository;
     private final RawDocumentRepository rawDocumentRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final MeterRegistry meterRegistry;
 
     public NormalizerListener(
             List<RawPayloadParser> parsers,
             JobRepository jobRepository,
             JobSnapshotRepository snapshotRepository,
             RawDocumentRepository rawDocumentRepository,
-            KafkaTemplate<String, Object> kafkaTemplate
+            KafkaTemplate<String, Object> kafkaTemplate,
+            MeterRegistry meterRegistry
     ) {
         this.parsersBySource = parsers.stream().collect(Collectors.toMap(RawPayloadParser::source, p -> p));
         this.jobRepository = jobRepository;
         this.snapshotRepository = snapshotRepository;
         this.rawDocumentRepository = rawDocumentRepository;
         this.kafkaTemplate = kafkaTemplate;
+        this.meterRegistry = meterRegistry;
     }
 
     @KafkaListener(topics = Topics.JOBS_RAW, groupId = "worker-normalizer", containerFactory = "rawListenerFactory")
@@ -50,26 +54,39 @@ public class NormalizerListener {
             return;
         }
 
-        NormalizedJob normalized = parser.parse(envelope.payload());
-        String contentHash = ContentHash.of(normalized);
-        String payloadJson = envelope.payload().toString();
+        // parse() 本身目前的設計是「欄位級」優雅降級（例如 postedAt 解析失敗時該欄位留
+        // null，見 add-job-posted-date/design.md），不會整筆回傳 null 或拋例外。
+        // 這裡的 try/catch 涵蓋的是「parser 內部真的出現非預期例外」這種未被個別欄位
+        // 防禦邏輯擋住的情況——計數後必須重新拋出，讓既有的三次重試 + DLQ 機制不變
+        // （跟 DiscordNotifier 同一個原則，見 design.md）。
+        try {
+            NormalizedJob normalized = parser.parse(envelope.payload());
+            String contentHash = ContentHash.of(normalized);
+            String payloadJson = envelope.payload().toString();
 
-        rawDocumentRepository.insertIgnore(envelope.source(), envelope.sourceJobId(), envelope.scrapedAt(), payloadJson);
-        snapshotRepository.insertIgnore(envelope.source(), envelope.sourceJobId(), envelope.scrapedAt(), normalized, contentHash);
+            rawDocumentRepository.insertIgnore(envelope.source(), envelope.sourceJobId(), envelope.scrapedAt(), payloadJson);
+            snapshotRepository.insertIgnore(envelope.source(), envelope.sourceJobId(), envelope.scrapedAt(), normalized, contentHash);
 
-        boolean isNew = jobRepository.upsert(
-                envelope.source(), envelope.sourceJobId(), envelope.url(), normalized,
-                contentHash, payloadJson, envelope.scrapedAt());
+            boolean isNew = jobRepository.upsert(
+                    envelope.source(), envelope.sourceJobId(), envelope.url(), normalized,
+                    contentHash, payloadJson, envelope.scrapedAt());
 
-        if (isNew) {
-            JobEventEnvelope event = new JobEventEnvelope(
-                    envelope.source(), envelope.sourceJobId(), envelope.scrapedAt(), envelope.url(),
-                    EventType.NEW, normalized.title(), normalized.company(), formatSalary(normalized));
-            String key = envelope.source() + ":" + envelope.sourceJobId();
-            kafkaTemplate.send(Topics.JOBS_EVENTS, key, event);
-            log.info("New job upserted source={} sourceJobId={}", envelope.source(), envelope.sourceJobId());
-        } else {
-            log.debug("Existing job re-upserted source={} sourceJobId={}", envelope.source(), envelope.sourceJobId());
+            meterRegistry.counter("jobradar.parse", "source", envelope.source(), "result", "success").increment();
+
+            if (isNew) {
+                JobEventEnvelope event = new JobEventEnvelope(
+                        envelope.source(), envelope.sourceJobId(), envelope.scrapedAt(), envelope.url(),
+                        EventType.NEW, normalized.title(), normalized.company(), formatSalary(normalized));
+                String key = envelope.source() + ":" + envelope.sourceJobId();
+                kafkaTemplate.send(Topics.JOBS_EVENTS, key, event);
+                meterRegistry.counter("jobradar.events.published", "source", envelope.source(), "type", "NEW").increment();
+                log.info("New job upserted source={} sourceJobId={}", envelope.source(), envelope.sourceJobId());
+            } else {
+                log.debug("Existing job re-upserted source={} sourceJobId={}", envelope.source(), envelope.sourceJobId());
+            }
+        } catch (Exception e) {
+            meterRegistry.counter("jobradar.parse", "source", envelope.source(), "result", "failure").increment();
+            throw e;
         }
     }
 

@@ -10,13 +10,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.jobradar.collector.scan.CollectorScanProperties;
 import dev.jobradar.collector.scan.ScanResult;
 import dev.jobradar.common.domain.SearchQuery;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.test.web.client.response.MockRestResponseCreators;
 import org.springframework.web.client.RestClient;
 
 class YouratorListScraperTest {
@@ -34,7 +37,7 @@ class YouratorListScraperTest {
                 .andRespond(withSuccess(fixture("yourator-list-page2.json"), MediaType.APPLICATION_JSON));
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
-        YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder);
+        YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder, new SimpleMeterRegistry());
         SearchQuery query = new SearchQuery(1, "yourator", "devops", "TPE", List.of(), 10, 120, true);
 
         ScanResult result = scraper.scan(query);
@@ -58,13 +61,39 @@ class YouratorListScraperTest {
                 .andRespond(withSuccess(fixture("yourator-list-page1.json"), MediaType.APPLICATION_JSON));
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
-        YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder);
+        YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder, new SimpleMeterRegistry());
         SearchQuery query = new SearchQuery(1, "yourator", "devops", "TPE", List.of(), 1, 120, true);
 
         ScanResult result = scraper.scan(query);
 
         assertThat(result.pagesScanned()).isEqualTo(1);
         assertThat(result.discovered()).hasSize(2);
+        server.verify();
+    }
+
+    @Test
+    void rateLimitRetryIsCounted() throws Exception {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+
+        server.expect(requestTo(containsString("page=1")))
+                .andRespond(MockRestResponseCreators.withStatus(HttpStatus.TOO_MANY_REQUESTS));
+        server.expect(requestTo(containsString("page=1")))
+                .andRespond(withSuccess(fixture("yourator-list-page1.json"), MediaType.APPLICATION_JSON));
+
+        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder, meterRegistry);
+        SearchQuery query = new SearchQuery(1, "yourator", "devops", "TPE", List.of(), 1, 120, true);
+
+        scraper.scan(query);
+
+        assertThat(meterRegistry.get("jobradar.scrape.retry")
+                        .tag("source", "yourator")
+                        .tag("reason", "rate_limited")
+                        .counter()
+                        .count())
+                .isEqualTo(1.0);
         server.verify();
     }
 

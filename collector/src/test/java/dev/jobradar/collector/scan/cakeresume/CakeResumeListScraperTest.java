@@ -11,13 +11,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.jobradar.collector.scan.CollectorScanProperties;
 import dev.jobradar.collector.scan.ScanResult;
 import dev.jobradar.common.domain.SearchQuery;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.test.web.client.response.MockRestResponseCreators;
 import org.springframework.web.client.RestClient;
 
 class CakeResumeListScraperTest {
@@ -41,7 +44,7 @@ class CakeResumeListScraperTest {
                 .andRespond(withSuccess(fixture("cakeresume-search-page2.json"), MediaType.APPLICATION_JSON));
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
-        CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder);
+        CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder, new SimpleMeterRegistry());
         SearchQuery query = new SearchQuery(1, "cakeresume", "後端工程師", "Taipei", List.of(), 10, 120, true);
 
         ScanResult result = scraper.scan(query);
@@ -70,13 +73,41 @@ class CakeResumeListScraperTest {
                 .andRespond(withSuccess(fixture("cakeresume-search-page1.json"), MediaType.APPLICATION_JSON));
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
-        CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder);
+        CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder, new SimpleMeterRegistry());
         SearchQuery query = new SearchQuery(1, "cakeresume", "後端工程師", "Taipei", List.of(), 1, 120, true);
 
         ScanResult result = scraper.scan(query);
 
         assertThat(result.pagesScanned()).isEqualTo(1);
         assertThat(result.discovered()).hasSize(2);
+        server.verify();
+    }
+
+    @Test
+    void rateLimitRetryIsCounted() throws Exception {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+
+        server.expect(requestTo(containsString("/api/client/v1/jobs/search")))
+                .andExpect(content().string(containsString("\"page\":1")))
+                .andRespond(MockRestResponseCreators.withStatus(HttpStatus.TOO_MANY_REQUESTS));
+        server.expect(requestTo(containsString("/api/client/v1/jobs/search")))
+                .andExpect(content().string(containsString("\"page\":1")))
+                .andRespond(withSuccess(fixture("cakeresume-search-page1.json"), MediaType.APPLICATION_JSON));
+
+        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder, meterRegistry);
+        SearchQuery query = new SearchQuery(1, "cakeresume", "後端工程師", "Taipei", List.of(), 1, 120, true);
+
+        scraper.scan(query);
+
+        assertThat(meterRegistry.get("jobradar.scrape.retry")
+                        .tag("source", "cakeresume")
+                        .tag("reason", "rate_limited")
+                        .counter()
+                        .count())
+                .isEqualTo(1.0);
         server.verify();
     }
 

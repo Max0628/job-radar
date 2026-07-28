@@ -266,6 +266,138 @@ Grafana（kube-prometheus-stack bundle）的 sidecar 會自動載入帶有
 - **[Trade-off] 不使用 SLO 專用工具，手寫 burn rate 規則較繁瑣且容易算錯。** → 接受，
   理解計算方式是本 change 的目的之一；以 `promtool test rules` 驗證正確性。
 
+## 附錄：實作記錄與真實發現（task 1，2026-07-28/29）
+
+**`hour()` 的 label 比對陷阱**：`(A > 0) and (B == 0) and (hour() < 15)` 這個寫法在
+`A`/`B` 帶有 `source` label、`hour()` 不帶任何 label 時，PromQL 預設的 `and` 向量比對
+要求兩邊 label set 完全相同才會 match——`hour()` 沒有 label，跟帶 `source` label 的
+向量比對永遠不相等，整條規則恆為空、永遠不會觸發。修法是 `and on() (hour() < 15)`，
+`on()` 加空括號代表比對時忽略所有 label，讓這個判斷式變成套用到每一個 `source` 的
+通用閘門。這個坑在 `promtool test rules` 第一次跑就抓到了——這正是「告警規則要有
+單元測試」這件事本身的價值：這種寫法在人工肉眼看規則檔案時完全看不出問題，
+只有真的餵資料進去跑過才會發現。
+
+**6h 窗口的 Path A 查詢是這次才補的**：`add-platform-observability` 原本只做了 24h
+窗口（給 SLO-2 用），這次發現「6 小時靜默失敗」需要獨立的 6h 窗口查詢，
+於是在 `postgres-exporter-queries` ConfigMap 加了 `jobradar_scrape_runs_6h_total`／
+`_jobs_discovered`。
+
+**驗證流程踩到一次 ArgoCD selfHeal 的坑**：在 commit 6h 查詢變更之前就先重啟了
+postgres-exporter pod 想driven測試，結果 ArgoCD 的 `selfHeal: true` 偵測到手動修改
+的 ConfigMap 跟 git 不一致，自動把它蓋回舊版本，導致新指標怎麼查都查不到、
+一度以為是 postgres_exporter 沒吃到設定。教訓：**手動驗證的順序一定要是「改本地檔案
+→ 先確認沒有更早的步驟遺漏 commit → 才能重啟/測試」，不能中間插入手動改動**，
+不然 selfHeal 會在你不注意的時候把驗證用的改動吃掉。
+
+**PrometheusRule 掛載到 Prometheus pod 有實際延遲**：Prometheus Operator 把匹配的
+PrometheusRule 渲染進 `prometheus-<release>-rulefiles-N` 這個 ConfigMap 很快，
+但 ConfigMap 內容同步進 Pod 掛載的 volume、以及 config-reloader 偵測到變更後
+真的呼叫 `/-/reload`，中間有實際的秒級延遲（這次觀察到約 10-15 分鐘量級的延遲，
+可能跟 kubelet sync period 與 config-reloader 的 debounce 有關）——不是本地測試
+通過就代表叢集裡馬上生效，兩者是分開的驗證步驟。
+
+**真實案例：`JobRadarDlqNotEmpty` 一上線就是 `pending`，不是理論案例**。實測發現
+`jobs.discovered.dlq` 已堆積 49 筆、`jobs.events.dlq` 已堆積 207 筆，從 DLQ 訊息裡
+還原出的 `scrapedAt` 回推至少 6 天前（`2026-07-22`）就開始發生。用
+`kafka-console-consumer` 印出 DLQ 訊息的 header 找到根因：
+
+```
+kafka_dlt-exception-message: Listener method '...DiscordNotifier.onEvent(...)' threw
+exception; URI with undefined scheme
+Caused by: java.lang.IllegalArgumentException: URI with undefined scheme
+  at ... DiscordNotifier.java:55
+```
+
+查 `job-radar-discord` 這個 SealedSecret 解出來的實際值，長度剛好 10 個字元，
+內容就是 `secrets.example.yaml` 裡的 placeholder 字面值 **`"REPLACE_ME"`**，
+從來沒被換成真的 Discord webhook URL。`DiscordNotifier.onEvent()` 現有的
+`webhookUrl() == null || isBlank()` guard 擋不住這個值——它非 null 也非空白，
+只是不是一個合法 URL，所以直接漏過 guard、傳進 `RestClient`，建構 request 時
+才炸開。
+
+**這正是這整個 change 存在的理由的活生生示範**：Discord 推播已經默默壞了至少
+6 天、207 則職缺通知全部遺失，`docs/architecture.md` 的前置作業清單上寫著
+「建立 Discord webhook，URL 以 SealedSecret 管理——已完成」，但實際上部署的
+secret 從來不是真的值——**文件寫「完成」不代表真的驗證過會動**，這正是
+Roadmap Phase 005 想補的那個盲區。
+
+**這不是我能修的問題**：真正的 Discord webhook URL 只有你知道（那是你 Discord
+server 的東西），我不會、也不該幫你生一個假的。你回來之後需要：
+
+```bash
+kubectl create secret generic job-radar-discord -n job-radar \
+  --from-literal=webhook-url='<真的 discord webhook url>' \
+  --dry-run=client -o yaml | \
+  kubeseal --format=yaml --controller-namespace=kube-system \
+  > apps/job-radar/discord-sealed-secret.yaml
+```
+（沿用既有 `discord-sealed-secret.yaml` 的做法，蓋掉裡面的舊 SealedSecret，
+commit 推送即可，`kubectl apply` 這類的 controller 會自動用新版解密出新 Secret，
+worker pod 要重啟一次才會讀到新的環境變數。）
+
+而 `add-business-metrics-and-alerting` 的 task 5（`DiscordNotifier` 加計數 +
+確保例外正確往上拋）這次的意義又更具體了——如果當初就有
+`jobradar_notification_total{result="failure"}` 這個 counter，這個問題應該在
+第一天、第一次失敗就會被看到，不用等 6 天後靠 DLQ 深度告警才發現。
+
+## 附錄：Alertmanager 路由實作記錄（task 2，2026-07-28/29）
+
+`kube-prometheus-stack` 部署以來，Alertmanager 的預設設定把**所有東西**（包含內建
+的 `Watchdog` dead man's switch）都路由到 `'null'` receiver——等於這個叢集從裝好
+observability stack 那天起，從來沒有任何告警真的送達過任何地方。這件事跟前面
+DLQ 的發現是同一類型：文件跟直覺都以為「AlertManager 有接 Discord」，實際上
+從未驗證過。
+
+**選型過程踩了兩個版本相關的坑，都跟直接照官方文件做會撞到的實際限制有關：**
+
+1. **原本想直接用 raw `alertmanager.config` Helm value 設 `discord_configs[].
+   webhook_url_file`**（避免把 URL 明文放進 Helm values），結果 `helm upgrade`
+   後 Alertmanager CR 的 `Reconciled` condition 直接失敗：
+   `provision alertmanager configuration: failed to initialize from secret:
+   yaml: unmarshal errors: line 28: field webhook_url_file not found in type
+   alertmanager.discordConfig`。原因是 kube-prometheus-stack-operator v0.92.1
+   自己 vendor 的 `discordConfig` Go struct 沒有這個欄位，即使 Alertmanager
+   本身（v0.33.0）完全支援——**operator 自己的 config 解析邏輯版本落後於它
+   部署的 Alertmanager 二進位檔**，兩者不是綁定升級的。
+
+2. **改用 `AlertmanagerConfig` CRD**（`discordConfigs[].apiURL.secretKeyRef`，
+   原生支援讀 Secret，不會撞到上面那個 struct 限制），但 operator 在接受這個
+   物件之前會**先驗證 secret 裡的值是不是一個合法 URL**。這個專案原本統一用
+   `"REPLACE_ME"` 當 placeholder（見 job-radar 的 `secrets.example.yaml`），
+   但 `"REPLACE_ME"` 不是合法 URL，會被 operator 直接拒絕整個 AlertmanagerConfig
+   （事件：`AlertmanagerConfig homelab-discord was rejected due to invalid
+   configuration: ... unsupported scheme "" for URL`）。改用一個**格式合法但
+   明顯是假的** placeholder（`https://discord.com/api/webhooks/
+   000000000000000000/REPLACE_ME`）才能讓 operator 接受、把設定真的合併進去，
+   同時保留「還沒填真的值」的視覺提示。
+
+**`--reuse-values` 的副作用第二次咬人**：拿掉一個壞掉的 `alertmanager.config`
+區塊、改用 AlertmanagerConfig CRD 之後，helm release 卻還是套用著舊的、壞掉的
+設定——因為 `--reuse-values` 是拿舊 release 的值當底再疊加新檔案，**從新檔案裡
+刪掉一個 key 不會讓它從最終結果消失**。修法是不再用這個 flag，改成 playbook
+先動態讀出目前的 `grafana.adminPassword`（原本就是安裝時 `--set` 帶入、不進版控
+的值）、用 `--set` 明確帶回去，取代 `--reuse-values` 原本要保護的東西，同時讓
+整份 values 檔案才是唯一真相，不會有隱藏的舊值殘留。
+
+**驗證方式**：無法取得真的 Discord webhook（只有你知道那組 URL），改用格式合法的
+假 URL，驗證到「Alertmanager 真的對 `discord.com` 發出 HTTP request」這一步——
+實測收到 Discord API 真實回應的 `404 Unknown Webhook`（假的 webhook ID 預期行為）
+與幾次 `429` 限流，證明 routing tree、receiver 比對、payload 組裝全部正確，
+只差最後一步真的送達。這比 tasks.md 原訂的「人工調低閾值觸發一次」更完整，
+因為連上真實的 `JobRadarDlqNotEmpty`（task 1 發現的真實案例）跟 `Watchdog`
+都一起驗證過。
+
+**意外的副作用，需要對你明講**：因為改成「一個 AlertmanagerConfig 吃下全叢集」
+的 catch-all 設計，這次連帶讓所有先前一起被丟進 `'null'` 的既有告警全部現形：
+`etcdMembersDown`、`etcdInsufficientMembers`（critical）、四筆 `TargetDown`、
+三筆 `KubeProxyInstanceUnreachable`、`KubeControllerManagerInstanceUnreachable`、
+`KubeSchedulerInstanceUnreachable`、`KubeCPUOvercommit`、`NodeSystemSaturation`。
+這些多半是 kube-prometheus-stack 預設規則針對多節點 HA etcd/control-plane 設計的
+告警，這個叢集是單一 control-plane 節點，某些可能屬於「規則預設值跟這個拓樸不符」
+的雜訊，但這次**沒有動手調這些規則**——範圍是把 routing 接通，不是重新調校每一條
+內建規則。等真的填上 webhook URL 那天，Discord 會一次湧入這些通知，這是可預期的，
+不是這次改動造成新問題。
+
 ## 驗證策略
 
 Java 變更會觸發 GitLab CI（耗時長），因此**全部驗證在推送前於本機完成，只推一次**。

@@ -3,6 +3,8 @@ package dev.jobradar.collector.scan;
 import dev.jobradar.common.domain.SearchQuery;
 import dev.jobradar.common.envelope.DiscoveredEnvelope;
 import dev.jobradar.common.kafka.Topics;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -21,17 +23,20 @@ public class ScanService {
     private final ScrapeCursorRepository cursorRepository;
     private final ScrapeRunRepository runRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final MeterRegistry meterRegistry;
 
     public ScanService(
             List<JobListScraper> scrapers,
             ScrapeCursorRepository cursorRepository,
             ScrapeRunRepository runRepository,
-            KafkaTemplate<String, Object> kafkaTemplate
+            KafkaTemplate<String, Object> kafkaTemplate,
+            MeterRegistry meterRegistry
     ) {
         this.scrapersBySource = scrapers.stream().collect(Collectors.toMap(JobListScraper::source, s -> s));
         this.cursorRepository = cursorRepository;
         this.runRepository = runRepository;
         this.kafkaTemplate = kafkaTemplate;
+        this.meterRegistry = meterRegistry;
     }
 
     public void runScan(SearchQuery query) {
@@ -43,6 +48,7 @@ public class ScanService {
 
         Instant startedAt = Instant.now();
         long runId = runRepository.startRun(query.source(), query.keyword(), startedAt);
+        Timer.Sample sample = Timer.start(meterRegistry);
 
         try {
             ScanResult result = scraper.scan(query);
@@ -65,11 +71,23 @@ public class ScanService {
             cursorRepository.updateAfterScan(query.id(), scrapedAt, result.pagesScanned());
             runRepository.finishRunSuccess(runId, Instant.now(), result.pagesScanned(), result.discovered().size());
 
+            meterRegistry.counter("jobradar.scan", "source", query.source(), "result", "success").increment();
+            meterRegistry.counter("jobradar.jobs.discovered", "source", query.source())
+                    .increment(result.discovered().size());
+            sample.stop(Timer.builder("jobradar.scan.duration")
+                    .tag("source", query.source())
+                    .register(meterRegistry));
+
             log.info("Scan finished source={} keyword={} pages={} jobsDiscovered={}",
                     query.source(), query.keyword(), result.pagesScanned(), result.discovered().size());
         } catch (Exception e) {
             log.error("Scan failed source={} keyword={}", query.source(), query.keyword(), e);
             runRepository.finishRunFailed(runId, Instant.now(), e.getMessage());
+
+            meterRegistry.counter("jobradar.scan", "source", query.source(), "result", "failure").increment();
+            sample.stop(Timer.builder("jobradar.scan.duration")
+                    .tag("source", query.source())
+                    .register(meterRegistry));
         }
     }
 }

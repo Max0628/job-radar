@@ -8,6 +8,7 @@ import dev.jobradar.collector.scan.DiscoveredJob;
 import dev.jobradar.collector.scan.JobListScraper;
 import dev.jobradar.collector.scan.ScanResult;
 import dev.jobradar.common.domain.SearchQuery;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
@@ -37,10 +38,17 @@ public class CakeResumeListScraper implements JobListScraper {
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final CollectorScanProperties properties;
+    private final MeterRegistry meterRegistry;
 
-    public CakeResumeListScraper(CollectorScanProperties properties, ObjectMapper objectMapper, RestClient.Builder restClientBuilder) {
+    public CakeResumeListScraper(
+            CollectorScanProperties properties,
+            ObjectMapper objectMapper,
+            RestClient.Builder restClientBuilder,
+            MeterRegistry meterRegistry
+    ) {
         this.properties = properties;
         this.objectMapper = objectMapper;
+        this.meterRegistry = meterRegistry;
         this.restClient = restClientBuilder
                 .baseUrl(BASE_URL)
                 .defaultHeader(HttpHeaders.USER_AGENT, properties.userAgent())
@@ -130,6 +138,7 @@ public class CakeResumeListScraper implements JobListScraper {
 
                 return objectMapper.readTree(response);
             } catch (HttpClientErrorException.TooManyRequests e) {
+                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE, "reason", "rate_limited").increment();
                 if (attempt >= MAX_RETRY) {
                     throw new IllegalStateException("CakeResume rate limited after " + MAX_RETRY + " retries", e);
                 }
