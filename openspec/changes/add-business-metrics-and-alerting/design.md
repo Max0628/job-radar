@@ -398,6 +398,52 @@ DLQ 的發現是同一類型：文件跟直覺都以為「AlertManager 有接 Di
 內建規則。等真的填上 webhook URL 那天，Discord 會一次湧入這些通知，這是可預期的，
 不是這次改動造成新問題。
 
+## 附錄：部署後驗證（tasks 7-8，2026-07-28/29）
+
+CI 全程只觸發一次（commit `baabbc8`），`test`/`build`/`package:collector`/
+`package:worker`/`deploy` 全部綠燈；`api`/`frontend` 沒被改到，`rules: changes:`
+正確判斷跳過，只重建了 collector/worker 兩個 image（見 k8s repo commit
+`549b3a6`，`deploy: job-radar baabbc8a`，diff 只有這兩個檔案）。
+
+**部署過程踩到已知的 `Insufficient cpu`**：兩個 worker 節點 CPU request 已經
+92–99%，rolling update 需要短暫多開一個 pod 的資源生不出來，新 pod 卡在
+`Pending`。因為 replicas=1，直接刪掉舊 pod 讓新 pod 卡進排程（短暫中斷，
+可接受），這是這個資源吃緊環境下 single-replica Deployment 的標準處理方式，
+不是本次改動造成的新問題。
+
+**實際驗證到的指標**（用跟 `add-platform-observability` 驗證 kafka-exporter
+時同一招——直接送一則合成訊息到 `jobs.raw`，繞過等排程的時間）：
+
+- 送一筆 `source=yourator`、`payload={"title":"Test Engineer","hiringOrganization":
+  {"name":"Test Co"}}` 的訊息進 `jobs.raw`，確認 `NormalizerListener` 正常 upsert
+  （`title` 非 null，滿足 `jobs.title NOT NULL`），`jobradar_parse_total
+  {source="yourator",result="success"}` = 1、`jobradar_events_published_total
+  {source="yourator",type="NEW"}` = 1，皆為實測真實數值，不是預期猜測。
+- 這筆新職缺照既有邏輯發到 `jobs.events`，`DiscordNotifier` 真的嘗試處理——因為
+  `job-radar-discord` 這個 webhook 目前仍是 `add-platform-observability` 發現的
+  `"REPLACE_ME"` placeholder，拋出 `IllegalArgumentException: URI is not
+  absolute`。**這次修正的例外傳播行為在真實環境驗證成立**：log 顯示
+  `Error handler threw an exception` / `Seek to current after exception`，
+  三次重試都確實發生（`jobradar_notification_total{result="failure"}` = 4，
+  精確對應「1 次初始 + 3 次重試」），最終進 `jobs.events.dlq`——offset 從
+  `add-platform-observability` 發現時的 207 變成 208，剛好 +1，跟這次唯一一筆
+  測試訊息完全對得上。
+- 因為推播失敗，`jobradar_pipeline_latency_seconds`（只在成功時記錄）
+  這次沒有樣本，符合設計。
+- 測試資料（`jobs`/`job_snapshots`/`raw_documents` 三張表裡 `source_job_id
+  ='obs-verify-2'` 的列）已手動清除，不會混進真實資料。
+
+**`jobradar_scan_total`／`jobradar_jobs_discovered_total`／
+`jobradar_scan_duration_seconds` 這三個還沒出現**：Micrometer 的 counter/timer
+是第一次真的被呼叫到才會註冊，而 `ScanScheduler` 只在台灣時間 08:00–23:00 觸發
+（現在是凌晨），要等下一個活躍時段的排程掃描真的跑一次才會出現。**Path A vs
+Path B 的完整交叉驗證因此還沒能做完**——`jobradar_parse`/`jobradar_notification`
+這兩個已經用真實資料驗證過，但跟 `jobradar_scrape_runs_24h`（Path A）重疊、
+理論上該一致的 `jobradar_scan_total` 推導成功率，要等真的有排程掃描資料後才能比對。
+留給你之後自行確認：`jobradar_scan_total{result="success"} /
+jobradar_scan_total` 算出的成功率，應該要跟 `jobradar_scrape_runs_24h_success /
+jobradar_scrape_runs_24h_total` 一致。
+
 ## 驗證策略
 
 Java 變更會觸發 GitLab CI（耗時長），因此**全部驗證在推送前於本機完成，只推一次**。
