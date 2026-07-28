@@ -444,6 +444,50 @@ Path B 的完整交叉驗證因此還沒能做完**——`jobradar_parse`/`jobra
 jobradar_scan_total` 算出的成功率，應該要跟 `jobradar_scrape_runs_24h_success /
 jobradar_scrape_runs_24h_total` 一致。
 
+## 附錄：task 9 上線後，一條告警立刻抓到真實問題（2026-07-29）
+
+三條新告警規則寫的時候都踩到同一類「除法兩邊 label 不一致，恆為空、永遠不會觸發」
+的坑（`ignoring(le)`／`sum()`／`ignoring(datname,datid)` 三處修正，詳見上方
+`add-business-metrics-and-alerting` design.md 的「Path-B-dependent alerts」記錄）。
+但更值得記錄的是：`HomelabLonghornVolumeUsageHigh` 這條**平台層**告警（見
+`platform/prometheus-rules.yaml`）上線後幾分鐘內就進入 `pending` 狀態——不是測試
+資料，是叢集裡真實有一個 volume 超過 85% 使用率。
+
+**查證過程**：
+
+1. Prometheus 查詢確認：`pvc-b0627b7b-...` 這個 volume 的
+   `longhorn_volume_actual_size_bytes / longhorn_volume_capacity_bytes` = 112.6%
+   ——**超過 100%**，比單純「快滿了」更奇怪。
+2. 反查 PVC：這個 volume 屬於 **Prometheus 自己的資料庫**
+   （`prometheus-kube-prometheus-stack-prometheus-db-...-0`，20Gi）。
+3. 先懷疑是不是這次工作階段新增大量指標（target 28→41、series 73845→93244，
+   +26%）把 Prometheus 自己的磁碟吃緊了——查 Prometheus 自己回報的
+   `prometheus_tsdb_storage_blocks_bytes` = 5.87GB，只佔 20Gi 的 27%，**跟
+   Longhorn 回報的 112.6% 完全對不起來**，代表這不是「這次新增的指標把 Prometheus
+   撐爆」，是別的原因。
+4. 直接查 Longhorn 自己的 CRD（`kubectl get volumes.longhorn.io` /
+   `snapshots.longhorn.io`）找到真正原因：這個 volume 的 `spec.size` 確實是
+   20GiB（21474836480 bytes），但 `status.actualSize` 是 22.5GiB
+   （24173854720 bytes）——**真的超額，不是指標算錯**。原因是有一個
+   **2026-07-05（23 天前，差不多是這套 observability stack 剛裝好的時間點）
+   建立、之後從未清理過的 snapshot**，大小約 4GB，佔著磁碟空間不放，導致
+   Longhorn 回報的實際磁碟佔用比 Prometheus 自己的 TSDB 大小多出將近 4GB。
+
+**結論**：`HomelabLonghornVolumeUsageHigh` 這條告警是本次新增的四條平台告警裡，
+**第一條上線就抓到真實問題**的——一個放了 23 天沒清的舊 snapshot，正在悄悄啃掉
+Longhorn 的磁碟空間，而且完全不會反映在 Prometheus 自己的容量指標上（只有從
+Longhorn 的角度才看得到）。這正是這整個 change 想做到的事：光看應用程式自己回報
+的數字不夠，平台層的視角能抓到應用程式自己看不到的問題。
+
+**這次沒有動手刪這個 snapshot**：刪除 Longhorn snapshot 理論上安全（歷史點的資料，
+不影響即時服務），但這是一個維運判斷（要不要保留歷史快照、保留多久），不是我該
+自己決定的事，留給你回來後自行確認要不要清。查詢指令：
+
+```bash
+kubectl get snapshots.longhorn.io -n longhorn-system | grep b0627b7b
+kubectl delete snapshots.longhorn.io -n longhorn-system 61da39c1-6a6e-48a5-b319-41087161d574
+```
+
 ## 驗證策略
 
 Java 變更會觸發 GitLab CI（耗時長），因此**全部驗證在推送前於本機完成，只推一次**。
