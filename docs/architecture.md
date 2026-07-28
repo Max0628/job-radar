@@ -213,9 +213,33 @@ Envelope（common module 內定義，欄位不可少）：
 
 ## 可觀測性
 
-- Metrics：Micrometer + Prometheus endpoint，接既有 kube-prometheus-stack（ServiceMonitor）。關鍵指標：每來源爬取成功率、每輪新缺數、consumer lag、DLQ 深度、Discord 推播成功率
-- Logs：結構化 JSON logs → 既有 Promtail/Loki
-- Alerts（Alertmanager）：DLQ > 0、單一來源連續 3 輪爬取失敗、consumer lag 持續增長
+**2026-07-28/29 更新：以下已從規劃變成實作完成，細節見
+`openspec/changes/add-platform-observability`、`add-business-metrics-and-alerting`。**
+
+- Metrics：Micrometer + Prometheus endpoint，接既有 kube-prometheus-stack
+  （ServiceMonitor）。分兩條路徑：
+  - **Path A**（不改 Java code）：`postgres_exporter` 自訂查詢直接聚合
+    `scrape_runs` 表，提供各來源掃描成功率／發現筆數／最後成功時間
+  - **Path B**（Micrometer 埋點）：`jobradar.scan`／`jobradar.jobs.discovered`／
+    `jobradar.scan.duration`（collector）、`jobradar.parse`／
+    `jobradar.events.published`／`jobradar.notification`／
+    `jobradar.pipeline.latency`（worker）、`jobradar.scrape.retry`（兩個
+    list scraper 的 429 重試）
+  - 平台層：`kafka-exporter`（broker 端 consumer lag，比 client 端可靠——worker
+    完全掛掉時 client 端指標會消失而非增長）、`postgres_exporter` 標準指標
+- Logs：結構化 JSON logs（`LogstashEncoder`）→ 既有 Promtail/Loki
+- Alerts（Alertmanager，經 `AlertmanagerConfig` CRD 路由，一個 catch-all
+  receiver 涵蓋全叢集）：`JobRadarSourceSilent`（6h 靜默失敗）、
+  `JobRadarScanSuccessRateLow`（SLO-2）、`JobRadarDlqNotEmpty`、
+  `JobRadarPipelineLatencySLOBurnFast`/`Slow`（SLO-1）、
+  `JobRadarNotificationFailureRateHigh`、`JobRadarConsumerLagGrowing`、
+  `JobRadarPostgresConnectionsHigh`，皆有 `promtool test rules` 單元測試
+  （見 `k8s` repo `apps/job-radar/tests/`）
+- SLO：
+  - **SLO-1**：99% 的職缺事件從 `scrapedAt` 到 Discord 推播成功耗時 < 5 分鐘
+  - **SLO-2**：每個來源每日掃描成功率 ≥ 95%
+- Dashboard：`job-radar Pipeline`（Grafana，ConfigMap as code），pipeline 漏斗
+  + SLO 達成率 + DLQ 深度 + consumer lag
 
 ## 前置作業（在 homelab-infra 側）
 
@@ -225,7 +249,16 @@ Envelope（common module 內定義，欄位不可少）：
 2. cluster 安裝 Sealed Secrets controller——已完成，`kubectl apply` 官方 release（這台機器沒裝
    helm，見 `add-walking-skeleton` tasks.md 的實作偏離記錄）
 3. GitLab 上建立 `job-radar` project，確認 Runner 可用、Registry 可 push——已完成
-4. 建立 Discord server + webhook，URL 以 SealedSecret 管理——已完成
+4. ~~建立 Discord server + webhook，URL 以 SealedSecret 管理——已完成~~
+   **2026-07-29 修正：這句話是錯的，從未真的完成過。** `job-radar-discord`
+   這個 SealedSecret 解出來的值一直是字面上的 `"REPLACE_ME"`
+   （`secrets.example.yaml` 的 placeholder），從未被換成真的 webhook URL。
+   這個問題完全沒被發現，直到 `add-business-metrics-and-alerting` 新增的
+   `JobRadarDlqNotEmpty` 告警上線，才發現 `jobs.events.dlq` 早已默默累積
+   207+ 筆訊息（推播全部失敗，因為 URL 不合法）。**這是「文件寫已完成不代表
+   真的驗證過」最直接的案例**——待辦：建立真的 Discord webhook，重新 seal
+   `apps/job-radar/discord-sealed-secret.yaml`（見
+   `homelab-infra/TROUBLESHOOTING.md`「job-radar-dlq」章節）
 
 ## Roadmap
 
@@ -235,7 +268,7 @@ Envelope（common module 內定義，欄位不可少）：
 | 002 | 多來源 adapter；search_queries 多關鍵字 | `openspec/changes/add-multi-source-cakeresume`（待歸檔） | **已完成並上線**——CakeResume 作為第二來源已上線。104 因 Cloudflare Turnstile 全站防護、無公開查詢 API 暫緩（見 `docs/source-api-notes.md`），**不是放棄**，之後仍要做，需另外評估繞過 Cloudflare 的方式 |
 | 003 | REST API + 前端看板 | `openspec/changes/add-job-dashboard`（待歸檔） | **已完成並上線**：`api` 唯讀查詢端點、React Admin 前端（職缺瀏覽、search_queries 配置台、收藏），部署見 D13 |
 | 004 | 職缺消失偵測（closed sweep）+ CHANGED 事件細緻化 | 未寫 | 未開始 |
-| 005 | 觀測性完善：Grafana dashboard、Alertmanager 規則 | `openspec/changes/add-platform-observability`（進行中）、`add-business-metrics-and-alerting`、`add-distributed-tracing`（皆待歸檔） | **add-platform-observability 大部分完成**：ServiceMonitor 雖然 001/002/003 就隨服務建了，但 Service 一直缺 `metadata.labels`，Prometheus 實際上從未採集到——2026-07-28 修好，同時補上 kafka-exporter、postgres_exporter（含 Path A 業務指標）、Longhorn/ingress-nginx/ArgoCD/cert-manager 的 ServiceMonitor；host node-exporter 已寫好 playbook，待手動跑（需 sudo）。Grafana dashboard／Alertmanager 規則／SLO／tracing 見另外兩個 change |
+| 005 | 觀測性完善：Grafana dashboard、Alertmanager 規則 | `openspec/changes/add-platform-observability`、`add-business-metrics-and-alerting`（皆待歸檔）、`add-distributed-tracing`（未開始） | **前兩個 change 皆已完成並上線**（2026-07-28/29）。`add-platform-observability`：ServiceMonitor 雖然 001/002/003 就隨服務建了，但 Service 一直缺 `metadata.labels`，Prometheus 實際上從未採集到——修好，同時補上 kafka-exporter、postgres_exporter（含 Path A 業務指標）、Longhorn/ingress-nginx/ArgoCD/cert-manager 的 ServiceMonitor；host node-exporter 已寫好 playbook，待手動跑（需 sudo，見待決事項）。`add-business-metrics-and-alerting`：Path B 埋點（collector/worker）、SLO-1/SLO-2、7 條 job-radar 告警 + 3 條平台告警（皆有 promtool 單元測試，過程中抓到 3 條告警因 PromQL label 不匹配而恆為空的實作 bug）、AlertmanagerConfig CRD 路由、pipeline dashboard，CI 全程只觸發一次。**副產品**：過程中發現 `job-radar-discord` webhook 從未真的設定過（見上方前置作業修正）、Prometheus 自己的 Longhorn volume 有個 23 天未清的 snapshot 佔用超過邏輯容量（見 `homelab-infra/TROUBLESHOOTING.md`）。`add-distributed-tracing` 尚未開始，需先評估叢集資源 headroom（這次 Prometheus series 增加了 26%） |
 | 006+ | LLM extraction 插槽（Workday / Threads）、跨平台去重、transactional outbox、對外公開網址（Cloudflare Tunnel） | 未寫 | 未開始 |
 
 ## 待決事項
@@ -259,3 +292,15 @@ Envelope（common module 內定義，欄位不可少）：
       取代現在土炮的固定翻頁策略
 - [ ] 對外公開網址：CGNAT 環境下確認走 Cloudflare Tunnel（免費、不用開 port、不暴露家用 IP）+
       便宜網域，方向已討論定案，還沒實作
+- [ ] **`job-radar-discord` webhook 需要真的設定**：目前是 `secrets.example.yaml`
+      的 `"REPLACE_ME"` placeholder，Discord 推播從 2026-07-22 左右就一直失敗，
+      DLQ 已累積 200+ 筆（見 `homelab-infra/TROUBLESHOOTING.md`「job-radar-dlq」）。
+      建立真的 webhook 後重新 seal `apps/job-radar/discord-sealed-secret.yaml`
+- [ ] host node-exporter 需要手動跑一次 `ansible-playbook`（需要互動式 sudo，
+      見 `add-platform-observability/design.md` 附錄的指令），跑完才能驗證 TLP
+      對實體 CPU 頻率/溫度的實際效果
+- [ ] Longhorn 上 Prometheus 自己的 volume 有個 23 天未清的舊 snapshot，佔用
+      超過邏輯容量（112.6%），是否清除待自行決定（見
+      `homelab-infra/TROUBLESHOOTING.md`「Storage（Longhorn）」）
+- [ ] `add-distributed-tracing` 尚未開始，需先確認叢集資源 headroom
+      （Prometheus series 這次已經 +26%，Tempo 是三個 change 裡資源成本最高的）
