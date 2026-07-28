@@ -24,19 +24,19 @@
 
 ## 系統總覽
 
-圖例：單線框 `┌─┐` = 服務/process；雙線框 `╔═╗` = Kafka topic。三個來源框下方標的是
-`docs/source-api-notes.md` 目前的驗證現況。
+圖例：單線框 `┌─┐` = 服務/process；雙線框 `╔═╗` = Kafka topic。來源框下方標的是
+`docs/source-api-notes.md` 目前的驗證現況（104 暫緩中，不在圖上，見下方說明）。
 
 ```
     外部求職平台（collector 主動呼叫，遵守禮貌爬蟲：同來源並發≤2、間隔≥1s、429退避）
 
-    ┌────────────────────────┐     ┌────────────────────────┐     ┌────────────────────────┐
-    │        Yourator        │     │          104           │     │       CakeResume       │
-    └────────────────────────┘     └────────────────────────┘     └────────────────────────┘
-        term[]/area[]/sort               Cloudflare 擋，暫緩                  api.cake.me
-               已驗證可用                         無公開API                          已驗證可用
-                 │                              │                              │
-                 ┴──────────────────────────────┬──────────────────────────────┴
+    ┌────────────────────────┐     ┌────────────────────────┐
+    │        Yourator        │     │       CakeResume       │
+    └────────────────────────┘     └────────────────────────┘
+        term[]/area[]/sort                  api.cake.me
+        已驗證可用，正式運作              已驗證可用，正式運作
+                 │                              │
+                 ┴──────────────────────────────┴
                                                 │
                                                 ▼           HTTP GET/POST，回傳職缺列表
        ┌──────────────────┐      ┌────────────────────────────┐
@@ -84,7 +84,8 @@
                                                                                     ▼
                                                                          ┌────────────────────┐
                                                                          │      Frontend      │
-                                                                         │     (roadmap)      │
+                                                                         │  (React Admin，     │
+                                                                         │  nginx 內部轉發 api） │
                                                                          └────────────────────┘
 
                                                 │
@@ -113,9 +114,12 @@
 
 > **圖上「Detail Fetcher」是 per-source 決定，不是每個來源都真的打第二次 request。**
 > 實測 Yourator 的 list API 沒有 description，detail 得另外對一個一般網頁 GET、抓內嵌的
-> JSON-LD；但 CakeResume 的 search API 回應已經含完整職缺全文，可能不需要 detail 這一步
-> （待確認）。細節與各來源實測結果見 `openspec/changes/add-walking-skeleton/design.md` 附錄、
-> `docs/source-api-notes.md`。
+> JSON-LD；CakeResume 的 search API 回應已經含完整職缺全文，**已確認不需要 detail 這一步**
+> （`needsDetail=false`，見 `CakeResumeListScraper`）。104 評估過（見 `docs/source-api-notes.md`），
+> 整個網域掛 Cloudflare Turnstile、無公開查詢 API，plain HTTP request 全部回 403，**暫緩、不是
+> 放棄**——現階段先以 CakeResume 作為第二來源，104 之後仍打算做，屆時要評估瀏覽器自動化繞過
+> Cloudflare 的方式與成本。細節與各來源實測結果見 `openspec/changes/add-walking-skeleton/design.md`
+> 附錄、`docs/source-api-notes.md`。
 
 ## 決策記錄（含被否決的選項）
 
@@ -133,19 +137,23 @@
 | D10 | Secrets 用 Sealed Secrets（kubeseal） | GitOps 環境標準輕量解；加密後 yaml 可進 git 由 ArgoCD 同步 | Vault / External Secrets（homelab 維運過重）；明文 Secret 手動 apply（脫離 GitOps） |
 | D11 | 事件發布 v1 接受「commit PG 後、發 Kafka 前 crash 會漏事件」 | 個人工具可接受，下一輪爬取會補；v2 若要嚴謹再上 transactional outbox | v1 直接上 outbox（過早複雜化） |
 | D12 | 職缺消失偵測延後，但 `last_seen_at` 與 `scrape_runs` 從 v1 就記錄 | 偵測邏輯依賴的資料不可事後補 | — |
+| D13 | frontend 對外唯一入口，`api` 完全不對外開 Ingress；frontend 的 nginx 用內部 Service DNS 反向代理 `/api/*` 給 `api`（同源請求，瀏覽器角度沒有跨網域） | 攻擊面最小化——公開只暴露一個服務；跟本機開發用 Vite proxy 是同一個設計決策的 production 對應實作，`frontend/.env` 的 `VITE_JSON_SERVER_URL=/api` 不用因環境而改 | `api` 也開一個公開 Ingress、走 CORS 讓瀏覽器直連（多一個公開端點、多一層 CORS 設定與維護成本，資安收益為負） |
+| D14 | GitLab CI 用 `rules: changes:` 讓 `package:*`/`deploy` 只處理真的有異動的服務；worker 的 upsert SQL 明確把每個會變動的欄位都寫進 `ON CONFLICT DO UPDATE SET`，不能只挑「看起來會變」的欄位 | 四個服務每次 push 全部重建，單一服務改動也要等其他三個跑完；`ON CONFLICT` 漏欄位是個沉默的 bug（該欄位永遠卡在第一次 insert 的值，之後重新整理進來的正確資料完全不會覆蓋上去），已實際踩過（`url` 欄位一度被漏掉） | 全部服務永遠一起建置（簡單但浪費）；upsert 只更新「常見會變」的欄位（隱性假設不成立時會安靜壞掉，難以事後察覺） |
 
 ## Repo 結構（Gradle multi-module）
 
 ```
 job-radar/
 ├── CLAUDE.md            # 給執行 session 的守則
-├── specs/               # SDD 文件（本檔 + feature specs）
+├── docs/                # architecture.md（本檔）、source-api-notes.md
+├── openspec/            # SDD change 文件（proposal/design/specs/tasks）
 ├── settings.gradle
-├── common/              # 訊息 envelope、domain model、共用設定（不可執行）
+├── common/              # 訊息 envelope、domain model、Flyway migration（不可執行）
 ├── collector/           # Scheduler + 各平台 list scraper adapter（boot jar）
 ├── worker/              # detail-fetcher / normalizer / notifier 三個 Kafka consumer（boot jar）
-├── api/                 # REST API（boot jar）；未來 frontend/ 也放本 repo
-└── .gitlab-ci.yml       # build → test → build image → push registry → 更新 k8s repo image tag
+├── api/                 # REST API（boot jar）
+├── frontend/             # React Admin 前端（靜態 build，nginx 服務，見 D13）
+└── .gitlab-ci.yml       # test → build → package（kaniko）→ deploy（更新 k8s repo image tag）
 ```
 
 ## Kafka Topics 與訊息合約
@@ -162,7 +170,7 @@ Envelope（common module 內定義，欄位不可少）：
 {
   "schemaVersion": 1,
   "type": "discovered | raw | event",
-  "source": "yourator | 104 | ...",
+  "source": "yourator | cakeresume | 104（暫緩）",
   "sourceJobId": "...",
   "scrapedAt": "ISO-8601",
   "url": "...",
@@ -184,9 +192,24 @@ Envelope（common module 內定義，欄位不可少）：
 
 ## 部署與 GitOps
 
-- Manifests 放既有的 `k8s` repo（ArgoCD root app 已指向它），建議結構：`apps/job-radar/`（collector / worker / api Deployment + Kafka、PostgreSQL StatefulSet + SealedSecrets），用 kustomize 收攏
-- CI 流程：push → GitLab Runner 跑 test → build image → push registry → 以 commit SHA 更新 k8s repo 的 image tag → ArgoCD 自動 sync
-- 資源預算：T480 共 4C/8T；所有 JVM 設好 `-Xmx`（各 512MB 內）與 k8s requests/limits；Kafka heap 1GB 內
+- Manifests 放 `k8s` repo 的 `apps/job-radar/`（純 YAML，無 kustomize——ArgoCD root app 是
+  `directory.recurse: true`，遞迴同步整個目錄即可，不需要逐 app 建 ArgoCD Application 或用
+  kustomize 收攏，見 `add-walking-skeleton/design.md` 的實際確認）：collector / worker / api /
+  frontend 四個 Deployment + Kafka、PostgreSQL 兩個 StatefulSet + SealedSecrets（DB 密碼、
+  Discord webhook、registry pull 用的憑證）。frontend 額外掛一個 Ingress（`cert-manager` 自動
+  簽發 TLS，見 D13）
+- CI 流程：push → `test`（全模組跑一次）→ `build`（Java 三服務 bootJar，跟 `build:frontend`
+  平行跑）→ `package:*`（kaniko 打包四個 image，各自用 `rules: changes:` 判斷這次有沒有真的
+  改到自己負責的資料夾，沒改到就跳過，不浪費時間重建沒變動的服務）→ `deploy`（用同一套
+  `rules: changes:` 邏輯判斷要更新 k8s repo 裡哪幾個服務的 image tag，`needs: [test, build]`
+  確保不會在測試/編譯結果出來前搶跑）→ ArgoCD 自動 sync
+- CI 的 Gradle / npm 套件下載會快取到 MinIO（GitLab 自帶的 S3 相容儲存，不是另外新裝的服務）；
+  Gradle 端要另外把 `GRADLE_USER_HOME` 指到專案資料夾內，不然 Gradle 預設存在使用者家目錄，
+  跟快取路徑對不上、快取形同虛設（真的踩過的坑）
+- 資源預算：實體機是 T480（8C/62G），但 k8s 三個節點是這台機器上開的虛擬機（`k8s-control`/
+  `k8s-worker1`/`k8s-worker2`，各只分到 2 vCPU），CPU 常態吃緊，排程 pod 遇到
+  `Insufficient cpu` 是已知常態；所有 JVM 設好 `-Xmx`（各 512MB 內）與 k8s requests/limits；
+  Kafka heap 1GB 內
 
 ## 可觀測性
 
@@ -194,28 +217,45 @@ Envelope（common module 內定義，欄位不可少）：
 - Logs：結構化 JSON logs → 既有 Promtail/Loki
 - Alerts（Alertmanager）：DLQ > 0、單一來源連續 3 輪爬取失敗、consumer lag 持續增長
 
-## 前置作業（在 homelab-infra 側，寫程式前必須完成）
+## 前置作業（在 homelab-infra 側）
 
-1. **CA 信任缺口（必修）**：`install-ca.yml` 目前只發 CA 給 iPhone/Mac。需新增 playbook 將 homelab Root CA 裝進三台 k8s node 的系統信任庫（`/usr/local/share/ca-certificates/` → `update-ca-certificates` → 重啟 containerd），否則節點拉不了 registry image、Runner 也 push 不了
-2. cluster 安裝 Sealed Secrets controller（helm，納入 homelab-infra 管理）
-3. GitLab 上建立 `job-radar` project，確認 Runner 可用、Registry 可 push
-4. 建立 Discord server + webhook，URL 以 SealedSecret 管理
+1. **CA 信任缺口**：`install-registry-ca-trust.yml`（homelab-infra）把 homelab Root CA 裝進
+   k8s node 的系統信任庫 → `update-ca-certificates` → 重啟 containerd，不然節點拉不了 registry
+   image。**只對 `k8s-control`/`k8s-worker1` 執行過，`k8s-worker2` 還沒補**（見待決事項）
+2. cluster 安裝 Sealed Secrets controller——已完成，`kubectl apply` 官方 release（這台機器沒裝
+   helm，見 `add-walking-skeleton` tasks.md 的實作偏離記錄）
+3. GitLab 上建立 `job-radar` project，確認 Runner 可用、Registry 可 push——已完成
+4. 建立 Discord server + webhook，URL 以 SealedSecret 管理——已完成
 
 ## Roadmap
 
-| Phase | 內容 | Spec |
-|-------|------|------|
-| 001 | Walking skeleton：Yourator 單一關鍵字走通全管線到 Discord，部署進 cluster | `specs/001-walking-skeleton.md` |
-| 002 | 104 來源 adapter；深掃節奏；search_queries 多關鍵字 | 未寫 |
-| 003 | REST API + 簡易前端看板 | 未寫 |
-| 004 | 職缺消失偵測（closed sweep）+ CHANGED 事件細緻化 | 未寫 |
-| 005 | 觀測性完善：Grafana dashboard、Alertmanager 規則 | 未寫（可與 002–003 並行） |
-| 006+ | LLM extraction 插槽（Workday / CakeResume / Threads）、跨平台去重、transactional outbox | 未寫 |
+| Phase | 內容 | Spec | 狀態 |
+|-------|------|------|------|
+| 001 | Walking skeleton：Yourator 單一關鍵字走通全管線到 Discord，部署進 cluster | `openspec/changes/add-walking-skeleton`（待歸檔） | **已完成並上線**，端到端驗收（push → CI → ArgoCD → Discord）已於實際 pipeline 驗證通過 |
+| 002 | 多來源 adapter；search_queries 多關鍵字 | `openspec/changes/add-multi-source-cakeresume`（待歸檔） | **已完成並上線**——CakeResume 作為第二來源已上線。104 因 Cloudflare Turnstile 全站防護、無公開查詢 API 暫緩（見 `docs/source-api-notes.md`），**不是放棄**，之後仍要做，需另外評估繞過 Cloudflare 的方式 |
+| 003 | REST API + 前端看板 | `openspec/changes/add-job-dashboard`（待歸檔） | **已完成並上線**：`api` 唯讀查詢端點、React Admin 前端（職缺瀏覽、search_queries 配置台、收藏），部署見 D13 |
+| 004 | 職缺消失偵測（closed sweep）+ CHANGED 事件細緻化 | 未寫 | 未開始 |
+| 005 | 觀測性完善：Grafana dashboard、Alertmanager 規則 | `openspec/changes/add-platform-observability`（進行中）、`add-business-metrics-and-alerting`、`add-distributed-tracing`（皆待歸檔） | **add-platform-observability 大部分完成**：ServiceMonitor 雖然 001/002/003 就隨服務建了，但 Service 一直缺 `metadata.labels`，Prometheus 實際上從未採集到——2026-07-28 修好，同時補上 kafka-exporter、postgres_exporter（含 Path A 業務指標）、Longhorn/ingress-nginx/ArgoCD/cert-manager 的 ServiceMonitor；host node-exporter 已寫好 playbook，待手動跑（需 sudo）。Grafana dashboard／Alertmanager 規則／SLO／tracing 見另外兩個 change |
+| 006+ | LLM extraction 插槽（Workday / Threads）、跨平台去重、transactional outbox、對外公開網址（Cloudflare Tunnel） | 未寫 | 未開始 |
 
 ## 待決事項
 
-- [ ] Yourator / 104 實際 API 形狀調查（endpoint、分頁、排序參數、欄位）——001 的第一個 task，調查結果寫回 spec
+- [x] Yourator 實際 API 形狀調查——已完成，見 `docs/source-api-notes.md`
+- [x] 104 實際 API 形狀調查——已完成（Cloudflare Turnstile 全站防護，暫緩），見
+      `docs/source-api-notes.md`
 - [x] k8s repo 內版型：確認現有 root app（`argocd-root-app.yml`，`directory.recurse: true`）
       會遞迴同步純 YAML manifest，不需要 kustomize 或逐 app 建 ArgoCD Application（見 001 design.md）
-- [ ] Kafka 部署方式：Strimzi operator vs 純 StatefulSet（傾向純 StatefulSet + KRaft，operator 對單 broker 過重，001 時定案）
-- [ ] Java package 前綴與 groupId 命名
+- [x] Kafka 部署方式：純 StatefulSet + KRaft（未用 Strimzi operator，對單 broker 過重），已上線運作
+- [x] Java package 前綴與 groupId 命名：`dev.jobradar`（`dev.jobradar.common` / `.collector` /
+      `.worker` / `.api`）
+
+**新發現、還沒處理的：**
+
+- [ ] `k8s-worker2` 這個節點還沒信任內部 registry 的 CA（只對 `k8s-control`/`k8s-worker1` 執行過
+      `install-registry-ca-trust.yml`）。目前 job-radar 的 Pod 都還沒被排到過這台節點，暫時沒事，
+      但只要哪天真的排過去會直接 `x509` 憑證錯誤、拉不了 image——跟之前 postgres 那次是同一類問題
+- [ ] Yourator 的 `sort` 參數除了預設 `most_related`，是否還有 `latest`/`created_at` 這類可以拿來
+      做時間游標排序的合法值，還沒實測驗證（見 `docs/source-api-notes.md`），如果有，可能可以
+      取代現在土炮的固定翻頁策略
+- [ ] 對外公開網址：CGNAT 環境下確認走 Cloudflare Tunnel（免費、不用開 port、不暴露家用 IP）+
+      便宜網域，方向已討論定案，還沒實作
