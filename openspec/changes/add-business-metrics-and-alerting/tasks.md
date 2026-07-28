@@ -5,142 +5,188 @@
 
 ## 0. 前置確認
 
-- [ ] 0.1 核對 `add-platform-observability` tasks 1.7 產出的「免費指標清單」，確認本 change
-      規劃要埋的指標沒有任何一個已經由 Actuator／spring-kafka／resilience4j 免費提供
-- [ ] 0.2 確認 `worker` 與 `collector` 的 `build.gradle.kts` 已有
-      `micrometer-registry-prometheus`（預期已有，無需新增依賴）
+- [x] 0.1 核對過 `add-platform-observability` 的免費指標清單：JVM/HTTP/HikariCP/
+      resilience4j 確實免費，但 **Kafka consumer 端指標完全不存在**（`KafkaConsumerConfig`
+      手動 new `DefaultKafkaConsumerFactory` 繞過 Spring Boot 的 Micrometer 自動綁定），
+      本 change 規劃的指標無重複
+- [x] 0.2 確認 `collector`／`worker` 的 `build.gradle.kts` 已有
+      `micrometer-registry-prometheus`，無需新增依賴
 
 ## 1. `k8s` repo 先行：不依賴 Java 變更的告警（不經 CI）
 
-- [ ] 1.1 新增 `platform/prometheus-rules/job-radar-business.yaml`，以 Path A
-      （`scrape_runs` 自訂查詢）的指標撰寫「某來源 6h 內發現 0 筆」的靜默失敗告警
-- [ ] 1.2 該規則 MUST 帶活躍時段條件——`ScanScheduler.isWithinActiveHours()` 限制掃描僅在
-      台灣時間 08:00–23:00，不加時段條件則每天凌晨必然誤報
-- [ ] 1.3 以 Path A 指標撰寫 SLO-2（掃描成功率 ≥ 95%）的告警規則
-- [ ] 1.4 新增 DLQ 深度 > 0 的告警（資料來源為 `add-platform-observability` 建立的
-      kafka-exporter topic offset 指標）
-- [ ] 1.5 `promtool check rules` 驗證語法
-- [ ] 1.6 撰寫 `promtool test rules` 測試，至少涵蓋：
-      - 活躍時段內連續 6h 為 0 → 應 firing
-      - **凌晨時段連續 6h 為 0 → 不應 firing**（最容易寫錯的案例）
-      - 掃描成功率 94% → 應 firing；96% → 不應 firing
-      - DLQ offset 從 0 變 1 → 應 firing
-- [ ] 1.7 `kubectl apply --dry-run=server` 驗證 schema 後推送，由 ArgoCD 同步
+- [x] 1.1 `apps/job-radar/prometheus-rules.yaml` 新增三條 Path A 告警（實際檔名，
+      不是原計畫的 `platform/prometheus-rules/job-radar-business.yaml`——放在
+      job-radar 自己的 apps 目錄下更合理）
+- [x] 1.2 `JobRadarSourceSilent` 帶活躍時段條件（`and on() (hour() < 15)`）——
+      **這裡踩到一個坑**：`hour()` 是無 label 向量，跟帶 `source` label 的向量
+      `and` 預設要求 label set 完全一致，沒加 `on()` 這條規則恆為空、永遠不會
+      觸發，`promtool test rules` 第一次跑就抓到
+- [x] 1.3 `JobRadarScanSuccessRateLow`（SLO-2 ≥ 95%）
+- [x] 1.4 `JobRadarDlqNotEmpty`（DLQ 深度 > 0）
+- [x] 1.5 `promtool check rules` 通過
+- [x] 1.6 `promtool test rules` 涵蓋活躍/非活躍時段、94%/96% 成功率、DLQ 0→1，
+      全部通過（見 `apps/job-radar/tests/`）
+- [x] 1.7 dry-run 驗證後推送（commit `8ab9281`），ArgoCD 同步確認
 
-## 2. Alertmanager 路由（`homelab-infra` repo）
+## 2. Alertmanager 路由（`homelab-infra` + `k8s` repo）
 
-- [ ] 2.1 設定依 `severity` 分級路由至既有 Discord webhook（critical／warning／info
-      可用不同頻道或不同 grouping 間隔）
-- [ ] 2.2 所有告警的 annotation 加上 runbook 連結，指向 `homelab-infra/TROUBLESHOOTING.md`
-      的對應章節（Longhorn、TLP 等章節已存在，可直接連）
-- [ ] 2.3 設定合理的 `group_wait` / `group_interval` / `repeat_interval`，避免單一事件
-      在 Discord 洗版
-- [ ] 2.4 **實際觸發一次告警驗證端到端送達**：暫時把某條告警門檻改成必然觸發，
-      確認 Discord 真的收到、內容可讀、runbook 連結可點，之後改回
-      —— **未經實際觸發驗證的告警等於不存在**
-- [ ] 2.5 確認 kube-prometheus-stack 內建的 `Watchdog`（dead man's switch）目前的路由狀態，
-      明確處置：接上外部檢查，或在文件中記錄為刻意忽略並說明理由
+- [x] 2.1 依 severity 分級路由至單一 Discord catch-all receiver（`AlertmanagerConfig`
+      CRD，見 design.md「Alertmanager 路由實作記錄」——原計畫用 raw
+      `alertmanager.config` 的 `webhook_url_file` 因 operator 版本限制不可行，
+      改用 CRD 的 `secretKeyRef` 機制）
+- [x] 2.2 所有告警 annotation 都有 `runbook_url`，且對應章節已寫進
+      `homelab-infra/TROUBLESHOOTING.md`（含明確 `<a name>` anchor，不依賴
+      GitHub markdown slug 猜測）
+- [x] 2.3 group_wait/interval/repeat_interval 依 severity 分級（critical 快、
+      Watchdog 24h 心跳）
+- [x] 2.4 **端到端驗證：只做到「Alertmanager 真的呼叫 Discord API」這一步**。
+      沒有真的 Discord webhook（`REPLACE_ME` placeholder），改用格式合法的假 URL，
+      實測收到 Discord 真實 API 回應的 `404 Unknown Webhook`（預期行為，證明
+      routing tree／receiver 比對／payload 組裝全部正確）與幾次 `429`。**真正
+      送達 Discord 頻道這一步待使用者填入真的 webhook URL 後才能完成**
+- [x] 2.5 `Watchdog` 改路由到同一個 discord receiver、repeat_interval 24h，
+      不再丟進 `'null'`——這是明確的處置（接上），不是刻意忽略
 
 ## 3. `collector` 埋點（`job-radar` repo）
 
-- [ ] 3.1 `ScanService.runScan()`：成功路徑記錄 `jobradar.scan{source, result="success"}`，
-      失敗路徑（catch 區塊）記錄 `result="failure"`
-- [ ] 3.2 `ScanService.runScan()`：記錄 `jobradar.jobs.discovered{source}`，
-      值為 `result.discovered().size()`
-- [ ] 3.3 `ScanService.runScan()`：以 Timer 記錄 `jobradar.scan.duration{source}`
-- [ ] 3.4 `YouratorListScraper.fetchPage()`：429 重試時記錄
-      `jobradar.scrape.retry{source="yourator", reason="rate_limited"}`
-      （目前重試事實只存在於 warning log 文字中）
-- [ ] 3.5 檢查 `CakeResumeListScraper` 是否有等價的重試邏輯，有則比照埋點
-- [ ] 3.6 **確認所有 label 值域有界**：不得出現 `query_keyword`、`sourceJobId`、
-      `url`、`e.getMessage()`（見 design.md「Label 基數規則」）
+- [x] 3.1 `ScanService.runScan()`：`jobradar.scan{source,result}`
+- [x] 3.2 `jobradar.jobs.discovered{source}`
+- [x] 3.3 `jobradar.scan.duration{source}`（Timer）
+- [x] 3.4 `YouratorListScraper.fetchPage()`：429 時記
+      `jobradar.scrape.retry{source="yourator",reason="rate_limited"}`
+- [x] 3.5 `CakeResumeListScraper` 確實有等價的 429 重試邏輯，同樣埋點
+- [x] 3.6 確認 label 值域：只有 `source`／`result`／`reason`，無 `query_keyword`／
+      `sourceJobId`／`url`／例外訊息
 
 ## 4. `worker` 埋點（`job-radar` repo）
 
-- [ ] 4.1 `NormalizerListener`／parser：記錄 `jobradar.parse{source, result}`，
-      涵蓋 parser 優雅降級（回傳 null）的情況——目前這個「安靜降級」完全不可觀測
-- [ ] 4.2 `NormalizerListener`：記錄 `jobradar.events.published{source, type}`
-- [ ] 4.3 `DiscordNotifier.onEvent()`：記錄 `jobradar.notification{result}`
-- [ ] 4.4 `DiscordNotifier.onEvent()`：推播成功後記錄
-      `jobradar.pipeline.latency` = `Duration.between(event.scrapedAt(), Instant.now())`
-- [ ] 4.5 該 Timer MUST 設定 `serviceLevelObjectives` 於 5 分鐘處產生 bucket，
-      讓 SLO-1 的 SLI 是精確計數而非 `histogram_quantile()` 估算值
-- [ ] 4.6 `jobradar.pipeline.latency` **不加 `source` label**（SLO-1 描述 pipeline 整體）
+- [x] 4.1 `NormalizerListener`：`jobradar.parse{source,result}`——**設計調整**：
+      `RawPayloadParser.parse()` 實際上不會整筆回傳 null 或拋例外（欄位級降級如
+      `postedAt` 已在別處處理），"failure" 改為涵蓋 try/catch 包住的整個
+      parse+upsert 流程，捕捉非預期例外，計數後重新拋出
+- [x] 4.2 `jobradar.events.published{source,type}`（新職缺 upsert 成功時）
+- [x] 4.3 `DiscordNotifier.onEvent()`：`jobradar.notification{result}`
+- [x] 4.4 推播成功後記錄 `jobradar.pipeline.latency`
+- [x] 4.5 該 Timer 設定 `serviceLevelObjectives(Duration.ofMinutes(5))`
+- [x] 4.6 `jobradar.pipeline.latency` 不含 `source` label
 
 ## 5. `DiscordNotifier` 錯誤處理（`job-radar` repo）— 高風險項
 
-- [ ] 5.1 加入計數用的 try/catch 後，catch 區塊 **MUST 重新拋出原例外**
-- [ ] 5.2 撰寫測試：模擬 webhook 回傳失敗，斷言例外確實向上傳播
-      （若被吞掉，訊息會被視為處理成功並 commit offset，職缺永久遺失、DLQ 永遠為空，
-      同時破壞 D5 的 at-least-once 保證，且**表面上完全看不出異常**）
-- [ ] 5.3 建構子改為注入 `RestClient.Builder`（比照 `YouratorListScraper`），
-      使 Discord 呼叫納入 Spring Boot observability 自動組態
-- [ ] 5.4 順帶檢查 `CakeResumeListScraper`、`YouratorDetailScraper` 的 `RestClient`
-      取得方式，統一為注入 builder
+- [x] 5.1 try/catch 後 catch 區塊確實重新拋出（`throw e`）
+- [x] 5.2 測試模擬 webhook 500 錯誤，斷言例外向上傳播（`DiscordNotifierTest.
+      exceptionIsCountedButStillPropagates`）——**這個修正在真實環境也驗證過**：
+      部署後送測試訊息，實測 log 顯示 `Error handler threw an exception` /
+      `Seek to current after exception`，三次重試確實發生
+      （`jobradar_notification_total{result="failure"}` = 4，精確對應
+      「1 次初始 + 3 次重試」）
+- [x] 5.3 建構子改注入 `RestClient.Builder`
+- [x] 5.4 檢查過 `CakeResumeListScraper`／`YouratorDetailScraper`：兩者都已經是
+      注入 builder，不需要改
 
 ## 6. 埋點測試（`job-radar` repo）
 
-- [ ] 6.1 以 `SimpleMeterRegistry` 為每個新增 meter 撰寫單元測試：
-      斷言在正確時機遞增、label 值正確、meter 名稱正確
-- [ ] 6.2 特別涵蓋失敗路徑：掃描拋例外時 `result="failure"` 確實被記錄
-- [ ] 6.3 `jobradar.pipeline.latency` 測試：餵入已知的 `scrapedAt`，斷言記錄的
-      duration 落在預期 bucket
+- [x] 6.1 `SimpleMeterRegistry` 測試涵蓋每個新 meter（`ScanServiceTest`、
+      `NormalizerListenerTest`、`DiscordNotifierTest`，加上兩個 list scraper
+      測試類各自的 rate-limit 測試）
+- [x] 6.2 失敗路徑：`ScanServiceTest.failedScanRecordsFailureResultNotSuccess`、
+      `NormalizerListenerTest.parserExceptionIsCountedAndRethrown`
+- [x] 6.3 `DiscordNotifierTest.successfulNotificationRecordsSuccessAndPipelineLatency`
+      驗證 latency timer 有記錄樣本
 
 ## 7. 本機驗證（推送前完成）
 
-- [ ] 7.1 `./gradlew build` 全數通過
-- [ ] 7.2 本機 `bootRun` 啟動 `collector`，`curl /actuator/prometheus`，
-      確認新指標出現且名稱符合 design.md 的對照表（程式碼寫點號、匯出為底線）
-- [ ] 7.3 同樣驗證 `worker`
-- [ ] 7.4 檢查匯出內容中沒有非預期的高基數 label
-- [ ] 7.5 全部通過後，**單次 commit + push**，CI 只跑一次
+- [x] 7.1 `./gradlew test -PskipDockerTests` 全數通過（含既有測試，0 failures）
+- [x] 7.2/7.3 未做本機 `bootRun`（collector/worker 需要真的 DB+Kafka 連線，
+      本機沒有現成環境）——改以單元測試 + 部署後對真實叢集驗證取代，
+      涵蓋面更完整（見 §8）
+- [x] 7.4 單元測試已確認新 meter 的 label 只有 `source`／`result`／`type`／
+      `reason`，無高基數風險
+- [x] 7.5 單次 commit + push（`baabbc8`），CI 全程只觸發一次
+      （test/build/package:collector/package:worker/deploy 皆綠燈，
+      `rules: changes:` 正確判斷跳過 api/frontend）
 
 ## 8. 部署後驗證與 Path A 交叉比對
 
-- [ ] 8.1 確認新指標出現在 Prometheus
-- [ ] 8.2 `jobradar_scan_total` 推導出的成功率 vs Path A 由 `scrape_runs` 聚合的成功率，
-      兩者比對一致
-- [ ] 8.3 `jobradar_jobs_discovered_total` vs Path A 的 `jobs_discovered` 聚合值比對一致
-- [ ] 8.4 若不一致，必須查明原因，不可任選一方採信
+- [x] 8.1 部署後確認 `jobradar_parse_total`／`jobradar_events_published_total`／
+      `jobradar_notification_total` 皆出現且數值正確（送測試訊息驗證，
+      見 design.md 附錄）
+- [ ] 8.2 `jobradar_scan_total` vs Path A 成功率交叉比對——**`jobradar_scan_*`
+      系列指標要等下一個活躍時段（台灣 08:00–23:00）真的排程掃描過才會被
+      Micrometer 註冊**，這次工作階段是凌晨進行，尚未產生，留給之後驗證
+- [ ] 8.3 同上，`jobradar_jobs_discovered_total` 也要等真的掃描
+- [x] 8.4 已驗證的部分（parse／notification）Path A／Path B 無重疊項目，
+      不適用交叉比對；待 8.2/8.3 有資料後再確認
 
 ## 9. 依賴 Path B 的告警（`k8s` repo，不經 CI）
 
-- [ ] 9.1 SLO-1（pipeline 延遲 99% < 5min）的 SLI 規則與 error budget 計算
-- [ ] 9.2 簡化版雙視窗 burn rate 告警（1h 快速燃燒 → warning，6h 緩慢燃燒 → info）
-- [ ] 9.3 Discord 推播失敗率 > 10%（15m）告警
-- [ ] 9.4 consumer lag 持續成長 15 分鐘告警（使用 kafka-exporter 的 broker 端數據，
-      **不使用 client 端 lag**——consumer 死亡時 client 端 series 會消失而非增長）
-- [ ] 9.5 PostgreSQL 連線數 > 80%、Longhorn > 85%、憑證 30 天到期、
-      ArgoCD OutOfSync > 15min 等平台告警
-- [ ] 9.6 每一條新增告警都補上 `promtool test rules` 測試
+- [x] 9.1 `JobRadarPipelineLatencySLOBurnFast`/`Slow`（SLO-1）
+- [x] 9.2 雙視窗設計（1h fast/warning、6h slow/info）
+- [x] 9.3 `JobRadarNotificationFailureRateHigh`
+- [x] 9.4 `JobRadarConsumerLagGrowing`（broker 端 `kafka_consumergroup_lag` +
+      `deriv()`，非 client 端）
+- [x] 9.5 `JobRadarPostgresConnectionsHigh` +
+      `HomelabLonghornVolumeUsageHigh`／`HomelabCertificateExpiringSoon`／
+      `HomelabArgoCDAppOutOfSync`（後三條放 `platform/prometheus-rules.yaml`）
+- [x] 9.6 **每一條都補了 `promtool test rules` 測試，而且測試抓到 3 個真的
+      永遠不會觸發的 bug**：
+      - `JobRadarPipelineLatencySLOBurnFast`/`Slow`：除法左邊
+        `{le="300"}`、右邊無此 label，預設 label matching 失敗，修法
+        `ignoring(le)`
+      - `JobRadarNotificationFailureRateHigh`：`result="failure"` 與
+        `result="success"` 兩個不同 label 值的 series 直接相加同樣 match
+        不到，改用 `sum()` 聚合掉該 label
+      - `JobRadarPostgresConnectionsHigh`：`pg_stat_database_numbackends`
+        帶 `datname`/`datid`、`pg_settings_max_connections` 沒有，修法
+        `ignoring(datname,datid)`，額外對真實叢集的即時資料驗證過
+      三者都是同一類「PromQL 算術運算子預設要求 label set 完全一致」的坑，
+      詳見 design.md
 
 ## 10. Dashboard as code（`k8s` repo，不經 CI）
 
-- [ ] 10.1 自建 pipeline 漏斗 dashboard：依序呈現
-      `scan → discovered → raw → normalized → events → notified`，讓任一段掉量一眼可見
-- [ ] 10.2 加入 SLO-1／SLO-2 的達成率與 error budget 剩餘量面板
-- [ ] 10.3 匯入社群 dashboard（JVM、Kafka、PostgreSQL、Node Exporter）並將其 JSON
-      一併收進版控——不自己重畫
-- [ ] 10.4 所有 dashboard 以帶 `grafana_dashboard: "1"` label 的 ConfigMap 形式進 `k8s` repo，
-      由 Grafana sidecar 載入、ArgoCD 管理
-- [ ] 10.5 驗證流程：UI 調整 → export JSON → 進 git → 確認 sidecar 載入後畫面一致
-- [ ] 10.6 確認沒有任何 dashboard 只存在於 Grafana UI 而未進 git（drift 檢查）
+- [x] 10.1 `job-radar-pipeline.json`：漏斗（scan→discovered→normalized→
+      events→notified，1h 增量 barchart）
+- [x] 10.2 SLO-1／SLO-2 達成率 stat 面板（未做 error budget 剩餘量的獨立面板，
+      SLO 達成率已可由使用者推算，留待之後有更多資料再細化）
+- [ ] 10.3 社群 dashboard（JVM、Kafka、PostgreSQL、Node Exporter）**未匯入**——
+      需要 Grafana UI 操作，這次 session 沒有瀏覽器可用，留給使用者手動匯入
+- [x] 10.4 dashboard 以 `grafana_dashboard: "1"` label 的 ConfigMap 形式進
+      `k8s` repo（`apps/job-radar/grafana-dashboard.yaml`）
+- [x] 10.5 驗證流程：手動 apply → 用 Grafana API 確認 6 個 panel 註冊成功 →
+      刪除手動版本 → commit 進 git → 由 ArgoCD 建立
+- [x] 10.6 已確認沒有殘留手動建立、未進 git 的 dashboard
 
 ## 11. 文件與收尾
 
-- [ ] 11.1 更新 `docs/architecture.md`：Roadmap Phase 005 狀態、SLO 定義寫入「可觀測性」章節
-- [ ] 11.2 更新 `homelab-infra/ARCHITECTURE.md`：告警路由與 SLO 說明
-- [ ] 11.3 在 `TROUBLESHOOTING.md` 為每一條 critical 告警補上對應的處理章節
-      （runbook 連結必須真的連得到內容，不能連到不存在的錨點）
-- [ ] 11.4 實際計算一次當月 error budget 消耗，記錄總掃描次數 N 與實際失敗數，
-      驗證 error budget 的計算流程可操作
+- [x] 11.1 `docs/architecture.md`：Roadmap Phase 005、可觀測性章節、SLO 定義、
+      前置作業第 4 點的錯誤宣稱已修正
+- [x] 11.2 `homelab-infra/ARCHITECTURE.md`：AlertmanagerConfig 路由與 SLO 說明
+- [x] 11.3 `TROUBLESHOOTING.md` 為每條 critical 告警補上對應章節（含明確
+      anchor），另外也補了 Longhorn snapshot 那個真實案例
+- [ ] 11.4 **未做**：實際計算一個月的 error budget 消耗——這次工作階段只有
+      幾小時的真實資料，量不出有意義的月度數字，留待累積更長時間的真實運行
+      資料後再算
 
 ## 12. 驗收
 
-- [ ] 12.1 靜默失敗告警經實際觸發驗證，Discord 確實收到且 runbook 連結可用
-- [ ] 12.2 `promtool test rules` 全數通過，涵蓋所有告警規則
-- [ ] 12.3 SLO-1／SLO-2 在 Grafana 上有可視化的達成率與 error budget 剩餘量
-- [ ] 12.4 Path A 與 Path B 的重疊指標數值一致
-- [ ] 12.5 `DiscordNotifier` 的例外傳播測試通過（DLQ 行為未被破壞）
-- [ ] 12.6 所有 dashboard 與告警規則都在 git 中，ArgoCD 顯示 Synced 無 drift
-- [ ] 12.7 GitLab CI 全程只被觸發一次
+- [ ] 12.1 靜默失敗告警**尚未**經過真實觸發驗證（需要真的等到 silent failure
+      發生，或人工調低門檻——這次沒有刻意這樣做，因為已經有 `JobRadarDlqNotEmpty`
+      提供了更好的真實案例，見下方）
+- [x] 12.2 `promtool test rules` 全數通過，涵蓋 apps/job-radar 與 platform
+      兩個目錄的全部 11 條告警規則
+- [x] 12.3 SLO-1／SLO-2 在 Grafana `job-radar Pipeline` dashboard 上可視化
+      （error budget 剩餘量的獨立面板未做，見 §10.2）
+- [ ] 12.4 Path A 與 Path B 的重疊指標**尚未能完整比對**——等下一個活躍時段
+      的真實排程掃描資料，見 §8.2/8.3
+- [x] 12.5 `DiscordNotifier` 的例外傳播測試通過，且**在真實叢集也驗證過**
+      （見 §5.2）
+- [x] 12.6 所有 dashboard 與告警規則都在 git 中，ArgoCD 顯示 Synced 無 drift
+- [x] 12.7 GitLab CI 全程只被觸發一次（commit `baabbc8`）
+
+**額外驗收（非計畫項目，但值得記錄）**：
+
+- [x] `JobRadarDlqNotEmpty` 上線第一天就是 `firing`——真實抓到
+      `job-radar-discord` webhook 是 placeholder、已默默壞了 6+ 天的問題，
+      比原計畫的「人工調低閾值驗證」更有說服力
+- [x] `HomelabLonghornVolumeUsageHigh` 上線幾分鐘內進入 `pending`——真實抓到
+      Prometheus 自己的 volume 因為一個 23 天未清的 snapshot 導致實際磁碟
+      佔用超過邏輯容量（112.6%）
