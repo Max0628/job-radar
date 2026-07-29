@@ -139,6 +139,10 @@
 | D12 | 職缺消失偵測延後，但 `last_seen_at` 與 `scrape_runs` 從 v1 就記錄 | 偵測邏輯依賴的資料不可事後補 | — |
 | D13 | frontend 對外唯一入口，`api` 完全不對外開 Ingress；frontend 的 nginx 用內部 Service DNS 反向代理 `/api/*` 給 `api`（同源請求，瀏覽器角度沒有跨網域） | 攻擊面最小化——公開只暴露一個服務；跟本機開發用 Vite proxy 是同一個設計決策的 production 對應實作，`frontend/.env` 的 `VITE_JSON_SERVER_URL=/api` 不用因環境而改 | `api` 也開一個公開 Ingress、走 CORS 讓瀏覽器直連（多一個公開端點、多一層 CORS 設定與維護成本，資安收益為負） |
 | D14 | GitLab CI 用 `rules: changes:` 讓 `package:*`/`deploy` 只處理真的有異動的服務；worker 的 upsert SQL 明確把每個會變動的欄位都寫進 `ON CONFLICT DO UPDATE SET`，不能只挑「看起來會變」的欄位 | 四個服務每次 push 全部重建，單一服務改動也要等其他三個跑完；`ON CONFLICT` 漏欄位是個沉默的 bug（該欄位永遠卡在第一次 insert 的值，之後重新整理進來的正確資料完全不會覆蓋上去），已實際踩過（`url` 欄位一度被漏掉） | 全部服務永遠一起建置（簡單但浪費）；upsert 只更新「常見會變」的欄位（隱性假設不成立時會安靜壞掉，難以事後察覺） |
+| D15 | Tracing 後端選 Tempo，部署形態比照既有 Loki（SingleBinary + filesystem storage） | 與既有 Grafana/Loki 同生態，共用查詢介面；trace ↔ log ↔ metric 互跳在 Grafana 全家桶內最順；規模小、無 HA 需求，跟當初選 Loki 不選 ELK 同一套理由 | Jaeger（獨立的 UI/查詢介面，會多一個要維護、要記的工具，homelab 規模用不到它額外的功能）；Zipkin（生態較舊、跟 Grafana 系整合不如 Tempo 原生） |
+| D16 | 不部署獨立的 OTel Collector，應用程式直接用 OTLP exporter 送到 Tempo | 少一個要維護的元件；這個規模（3 個服務、單一後端）用不到 Collector 的 fan-out／批次聚合／protocol 轉換等價值，直接點對點送最簡單 | 部署 OTel Collector 做 buffering/fan-out（過早引入複雜度，homelab 規模沒有多後端、多來源的需求） |
+| D17 | 用 Micrometer Tracing（Spring 生態原生）而非 Java Agent（如 OTel Java auto-instrumentation agent） | 跟既有的 Micrometer metrics（`micrometer-registry-prometheus`）同一套 API 心智模型；不需要額外掛 `-javaagent`、不用管 agent 版本跟 Spring Boot 版本的相容性；`RestClient.Builder`／`KafkaTemplate` 這類 Spring 自動組態的元件天生就能被 observation 機制接住，不需要 agent 做 bytecode instrumentation | Java Agent（zero-code，但這個規模的程式碼量小，手動埋點的心智負擔不高，換來的是不用管 agent 相容性、啟動參數這類額外維運成本） |
+| D18 | 100% 取樣率 | 這個 homelab 規模（單機、低流量、個人使用）不需要取樣就能負擔，且完整保留每一筆 trace 對除錯最有利；**這是這個規模的特例，絕對不可外推到生產環境**——生產環境的流量會讓 100% 取樣的儲存與網路成本失控，需要用 head-based 或 tail-based sampling | 固定比例取樣（例如 10%）：規模用不到，還會讓少量、關鍵的除錯情境（例如這次抓到的 Discord webhook 失敗）有機率被漏採 |
 
 ## Repo 結構（Gradle multi-module）
 
@@ -240,6 +244,35 @@ Envelope（common module 內定義，欄位不可少）：
   - **SLO-2**：每個來源每日掃描成功率 ≥ 95%
 - Dashboard：`job-radar Pipeline`（Grafana，ConfigMap as code），pipeline 漏斗
   + SLO 達成率 + DLQ 深度 + consumer lag
+- **Traces（2026-07-29 上線）**：Micrometer Tracing（OTel bridge）+ OTLP，送到
+  `k8s` repo 部署的 Tempo（SingleBinary + filesystem storage，見
+  `homelab-infra/ARCHITECTURE.md`）。collector 與 worker 兩個服務埋點，`api`
+  不在範圍內（純 REST/DB 查詢，不在非同步 pipeline 上）。100% 取樣（這個規模
+  的特例，不可外推到生產環境）。
+  - Kafka context 傳遞：producer 端用 `spring.kafka.template.observation-
+    enabled=true`（KafkaTemplate 是自動組態的，屬性就夠）；worker 手動建立的
+    `ConcurrentKafkaListenerContainerFactory`（見 `KafkaConsumerConfig`）只設
+    屬性不會生效，要在 `factory.getContainerProperties()` 明確開
+  - traceId/spanId 透過 Micrometer Tracing 對 MDC 的內建整合自動出現在
+    `LogstashEncoder` 的 JSON log 輸出中，**不需要改 `logback-spring.xml`**
+    （實測確認，假設成立）
+  - `DiscordNotifier` 的 `RestClient.Builder` 注入（`add-business-metrics-
+    and-alerting` 已完成的改動）自動獲得 client span，不需額外埋點——實測確認
+  - **端到端實測驗證**：手動把某個 `search_queries` 的 `scrape_cursors`
+    往前撥（觸發立即掃描，不用等自然的 2 小時間隔），在 Tempo 抓到一條涵蓋
+    622 個 span、橫跨 collector 與 worker 兩個服務的單一 trace：
+    `scan-scheduler.tick` → 10 次 `http post`（CakeResume 分頁 API）→ 200 筆
+    `jobs.discovered send` → worker `jobs.discovered receive` → `jobs.raw
+    send/receive` → `jobs.events send/receive` → `DiscordNotifier` 對外
+    `http post`（4 次，1 次原始嘗試 + 3 次重試）→ `jobs.events.dlq send`。
+    完整驗證了「單一 trace 涵蓋完整跳轉」（不是四條互不相連的獨立 trace），
+    也是 tracing 上線後第一次派上用場：4 次 `http post` span 的
+    `exception: IllegalArgumentException`、`http.url: REPLACE_ME` 屬性
+    精確重現了 `job-radar-discord` webhook 仍是 placeholder 這個已知問題
+    （見上方前置作業與待決事項），不用再翻 log 就能立刻定位到確切原因
+  - Grafana 已接 Loki ↔ Tempo 雙向 derived field（`traceId` 正則
+    `"traceId":"(\w+)"`），log 與 trace 可互跳（見 `homelab-infra/
+    ARCHITECTURE.md`）
 
 ## 前置作業（在 homelab-infra 側）
 
@@ -268,7 +301,7 @@ Envelope（common module 內定義，欄位不可少）：
 | 002 | 多來源 adapter；search_queries 多關鍵字 | `openspec/changes/add-multi-source-cakeresume`（待歸檔） | **已完成並上線**——CakeResume 作為第二來源已上線。104 因 Cloudflare Turnstile 全站防護、無公開查詢 API 暫緩（見 `docs/source-api-notes.md`），**不是放棄**，之後仍要做，需另外評估繞過 Cloudflare 的方式 |
 | 003 | REST API + 前端看板 | `openspec/changes/add-job-dashboard`（待歸檔） | **已完成並上線**：`api` 唯讀查詢端點、React Admin 前端（職缺瀏覽、search_queries 配置台、收藏），部署見 D13 |
 | 004 | 職缺消失偵測（closed sweep）+ CHANGED 事件細緻化 | 未寫 | 未開始 |
-| 005 | 觀測性完善：Grafana dashboard、Alertmanager 規則 | `openspec/changes/add-platform-observability`、`add-business-metrics-and-alerting`（皆待歸檔）、`add-distributed-tracing`（未開始） | **前兩個 change 皆已完成並上線**（2026-07-28/29）。`add-platform-observability`：ServiceMonitor 雖然 001/002/003 就隨服務建了，但 Service 一直缺 `metadata.labels`，Prometheus 實際上從未採集到——修好，同時補上 kafka-exporter、postgres_exporter（含 Path A 業務指標）、Longhorn/ingress-nginx/ArgoCD/cert-manager 的 ServiceMonitor；host node-exporter 已寫好 playbook，待手動跑（需 sudo，見待決事項）。`add-business-metrics-and-alerting`：Path B 埋點（collector/worker）、SLO-1/SLO-2、7 條 job-radar 告警 + 3 條平台告警（皆有 promtool 單元測試，過程中抓到 3 條告警因 PromQL label 不匹配而恆為空的實作 bug）、AlertmanagerConfig CRD 路由、pipeline dashboard，CI 全程只觸發一次。**副產品**：過程中發現 `job-radar-discord` webhook 從未真的設定過（見上方前置作業修正）、Prometheus 自己的 Longhorn volume 有個 23 天未清的 snapshot 佔用超過邏輯容量（見 `homelab-infra/TROUBLESHOOTING.md`）。`add-distributed-tracing` 尚未開始，需先評估叢集資源 headroom（這次 Prometheus series 增加了 26%） |
+| 005 | 觀測性完善：Grafana dashboard、Alertmanager 規則、分散式追蹤 | `openspec/changes/add-platform-observability`、`add-business-metrics-and-alerting`、`add-distributed-tracing`（皆待歸檔） | **三個 change 皆已完成並上線**（2026-07-28/29）。`add-platform-observability`：ServiceMonitor 雖然 001/002/003 就隨服務建了，但 Service 一直缺 `metadata.labels`，Prometheus 實際上從未採集到——修好，同時補上 kafka-exporter、postgres_exporter（含 Path A 業務指標）、Longhorn/ingress-nginx/ArgoCD/cert-manager 的 ServiceMonitor；host node-exporter 已寫好 playbook，待手動跑（需 sudo，見待決事項）。`add-business-metrics-and-alerting`：Path B 埋點（collector/worker）、SLO-1/SLO-2、7 條 job-radar 告警 + 3 條平台告警（皆有 promtool 單元測試，過程中抓到 3 條告警因 PromQL label 不匹配而恆為空的實作 bug）、AlertmanagerConfig CRD 路由、pipeline dashboard，CI 全程只觸發一次。**副產品**：過程中發現 `job-radar-discord` webhook 從未真的設定過（見上方前置作業修正）、Prometheus 自己的 Longhorn volume 有個 23 天未清的 snapshot 佔用超過邏輯容量（見 `homelab-infra/TROUBLESHOOTING.md`）。`add-distributed-tracing`：一開始因為叢集 CPU request 帳面超賣（GitLab chart 預設值過高）排不進去，把 GitLab 的 CPU request 調降 + worker1 加 vCPU 後才有 headroom，見 `homelab-infra/ARCHITECTURE.md`「GitLab CPU 調整、worker1 加 vCPU、裝 Tempo」章節；Java 端埋點與端到端驗證見下方可觀測性章節 |
 | 006+ | LLM extraction 插槽（Workday / Threads）、跨平台去重、transactional outbox、對外公開網址（Cloudflare Tunnel） | 未寫 | 未開始 |
 
 ## 待決事項
@@ -284,9 +317,11 @@ Envelope（common module 內定義，欄位不可少）：
 
 **新發現、還沒處理的：**
 
-- [ ] `k8s-worker2` 這個節點還沒信任內部 registry 的 CA（只對 `k8s-control`/`k8s-worker1` 執行過
-      `install-registry-ca-trust.yml`）。目前 job-radar 的 Pod 都還沒被排到過這台節點，暫時沒事，
-      但只要哪天真的排過去會直接 `x509` 憑證錯誤、拉不了 image——跟之前 postgres 那次是同一類問題
+- [x] ~~`k8s-worker2` 這個節點還沒信任內部 registry 的 CA~~ **2026-07-29 已解決**：
+      worker1 加 vCPU 那次重開機風暴期間，frontend pod 真的被排到 worker2 上，
+      當場 `ImagePullBackOff`（`x509: certificate signed by unknown authority`）
+      印證了這裡的預測。已補跑 `install-registry-ca-trust.yml`，三個節點都確認
+      有信任這張 CA（見 `homelab-infra/TROUBLESHOOTING.md`）
 - [ ] Yourator 的 `sort` 參數除了預設 `most_related`，是否還有 `latest`/`created_at` 這類可以拿來
       做時間游標排序的合法值，還沒實測驗證（見 `docs/source-api-notes.md`），如果有，可能可以
       取代現在土炮的固定翻頁策略
@@ -302,5 +337,5 @@ Envelope（common module 內定義，欄位不可少）：
 - [ ] Longhorn 上 Prometheus 自己的 volume 有個 23 天未清的舊 snapshot，佔用
       超過邏輯容量（112.6%），是否清除待自行決定（見
       `homelab-infra/TROUBLESHOOTING.md`「Storage（Longhorn）」）
-- [ ] `add-distributed-tracing` 尚未開始，需先確認叢集資源 headroom
-      （Prometheus series 這次已經 +26%，Tempo 是三個 change 裡資源成本最高的）
+- [x] ~~`add-distributed-tracing` 尚未開始~~ **2026-07-29 已完成並上線**，見下方
+      Roadmap Phase 005 與可觀測性章節的 Tracing 小節
