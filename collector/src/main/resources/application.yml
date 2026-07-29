@@ -17,6 +17,10 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       properties:
         spring.json.add.type.headers: false
+    template:
+      # KafkaTemplate 是自動組態的（沒有手動 ProducerFactory bean），這個屬性讓它自動
+      # 產生 producer span 並把 W3C traceparent 塞進訊息 header，consumer 端才能接得起來
+      observation-enabled: true
 
 server:
   port: 8081
@@ -29,6 +33,14 @@ management:
   endpoint:
     health:
       show-details: never
+  tracing:
+    sampling:
+      # 100% 取樣是這個規模（單機、低流量）的特例，不可外推到生產環境，見
+      # add-distributed-tracing/design.md
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTLP_TRACING_ENDPOINT:http://localhost:4318/v1/traces}
 
 collector:
   scan:

@@ -62,6 +62,9 @@ public class KafkaConsumerConfig {
 
         ConcurrentKafkaListenerContainerFactory<String, T> factory = new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(consumerFactory);
+        // container 是手動建立的，不會被 Spring Boot 的 Kafka observation 自動組態納入，
+        // 只設 application.yml 屬性不會生效，必須在這裡明確開（見 tasks.md 3.2）
+        factory.getContainerProperties().setObservationEnabled(true);
 
         DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(
                 kafkaTemplate, (record, ex) -> new org.apache.kafka.common.TopicPartition(dlqTopic, record.partition()));

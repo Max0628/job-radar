@@ -22,6 +22,13 @@ spring:
         spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JsonDeserializer
         spring.json.use.type.headers: false
         spring.json.trusted.packages: dev.jobradar.common.envelope
+    template:
+      # KafkaTemplate 是自動組態的（沒有手動 ProducerFactory bean），這個屬性讓它自動
+      # 產生 producer span 並把 W3C traceparent 塞進訊息 header。consumer 端的
+      # observation 是手動開的，見 KafkaConsumerConfig.buildFactory()——這裡的
+      # spring.kafka.consumer.* 對實際 consumer 完全不生效（container factory 是手動
+      # 建立的，繞過 Spring Boot 的自動組態，是既有的已知狀況，不在本次變更範圍內）
+      observation-enabled: true
 
 server:
   port: 8082
@@ -34,6 +41,12 @@ management:
   endpoint:
     health:
       show-details: never
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTLP_TRACING_ENDPOINT:http://localhost:4318/v1/traces}
 
 worker:
   fetcher:
