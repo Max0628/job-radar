@@ -18,14 +18,12 @@ export const SearchQueryList = () => (
   <List>
     <Datagrid>
       <TextField source="source" />
-      <TextField source="keyword" emptyText="(空)" />
       <TextField source="location" emptyText="(不限地區)" />
       <ArrayField source="categories">
         <SingleFieldList linkType={false}>
           <ChipField source="." size="small" />
         </SingleFieldList>
       </ArrayField>
-      <NumberField source="maxPages" label="掃描頁數" />
       <NumberField source="intervalMinutes" label="間隔(分鐘)" />
       <BooleanField source="enabled" label="啟用中" />
       <EditButton />

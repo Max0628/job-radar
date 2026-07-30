@@ -3,10 +3,8 @@ import type { RaRecord } from "react-admin";
 // 對應後端 common.domain.SearchQuery（見 api/src/main/java/dev/jobradar/api/searchquery）
 export interface SearchQuery extends RaRecord {
   source: "yourator" | "cakeresume";
-  keyword: string;
   location: string | null;
   categories: string[] | null;
-  maxPages: number;
   intervalMinutes: number;
   enabled: boolean;
 }
