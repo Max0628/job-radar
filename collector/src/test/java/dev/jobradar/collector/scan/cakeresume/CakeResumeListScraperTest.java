@@ -12,6 +12,7 @@ import dev.jobradar.collector.scan.CollectorScanProperties;
 import dev.jobradar.collector.scan.ScanResult;
 import dev.jobradar.common.domain.SearchQuery;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -122,6 +123,43 @@ class CakeResumeListScraperTest {
         assertThat(meterRegistry.get("jobradar.scrape.retry")
                         .tag("source", "cakeresume")
                         .tag("reason", "rate_limited")
+                        .counter()
+                        .count())
+                .isEqualTo(1.0);
+        server.verify();
+    }
+
+    /**
+     * add-crawl-improvements 部署後實測發現：沒有頁數上限之後一輪掃描要打的請求數
+     * 變多，偶發的 I/O 逾時（connect/read timeout）在正式環境真的發生了——原本只有
+     * 429 有重試，一次偶發逾時就讓整輪掃描全部作廢（見 CakeResumeListScraper 建構子
+     * 註解）。這裡驗證 I/O 逾時現在會重試，不會直接放棄整輪掃描。
+     */
+    @Test
+    void ioTimeoutRetryIsCounted() throws Exception {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+
+        server.expect(requestTo(containsString("/api/client/v1/jobs/search")))
+                .andExpect(content().string(containsString("\"page\":1")))
+                .andRespond(request -> {
+                    throw new SocketTimeoutException("simulated read timeout");
+                });
+        server.expect(requestTo(containsString("/api/client/v1/jobs/search")))
+                .andExpect(content().string(containsString("\"page\":1")))
+                .andRespond(withSuccess(fixture("cakeresume-search-single-page.json"), MediaType.APPLICATION_JSON));
+
+        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder, meterRegistry);
+        SearchQuery query = new SearchQuery(1, "cakeresume", "Taipei", List.of(), 120, true);
+
+        ScanResult result = scraper.scan(query);
+
+        assertThat(result.discovered()).hasSize(2);
+        assertThat(meterRegistry.get("jobradar.scrape.retry")
+                        .tag("source", "cakeresume")
+                        .tag("reason", "io_timeout")
                         .counter()
                         .count())
                 .isEqualTo(1.0);

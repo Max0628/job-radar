@@ -21,6 +21,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -58,6 +59,10 @@ public class CakeResumeListScraper implements JobListScraper {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.meterRegistry = meterRegistry;
+        // connect/read timeout 由注入的 restClientBuilder 帶（見
+        // dev.jobradar.collector.config.HttpClientConfig）——刻意不在這裡呼叫
+        // requestFactory()，那樣會讓單元測試的 MockRestServiceServer 綁定失效
+        // （已實際踩過這個坑，見 HttpClientConfig 的類別註解）。
         this.restClient = restClientBuilder
                 .baseUrl(BASE_URL)
                 .defaultHeader(HttpHeaders.USER_AGENT, properties.userAgent())
@@ -189,6 +194,19 @@ public class CakeResumeListScraper implements JobListScraper {
                 }
                 long backoffMillis = 2000L * attempt;
                 log.warn("CakeResume returned 429 for page={}, retry {} after {}ms", page, attempt, backoffMillis);
+                sleep(backoffMillis);
+            } catch (ResourceAccessException e) {
+                // 連線/讀取逾時等 I/O 層級的偶發問題，跟 429 一樣值得重試——沒有頁數上限
+                // 之後一輪掃描要打的請求數變多，偶發逾時的機率也跟著變高（見建構子註解），
+                // 沒有這個重試的話，任何一次偶發逾時就會讓整輪掃描全部作廢
+                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE, "reason", "io_timeout").increment();
+                if (attempt >= MAX_RETRY) {
+                    throw new IllegalStateException(
+                            "CakeResume request failed after " + MAX_RETRY + " retries (page " + page + ")", e);
+                }
+                long backoffMillis = 2000L * attempt;
+                log.warn("CakeResume I/O error for page={}, retry {} after {}ms: {}",
+                        page, attempt, backoffMillis, e.getMessage());
                 sleep(backoffMillis);
             } catch (Exception e) {
                 throw new IllegalStateException("Failed to fetch CakeResume page " + page, e);

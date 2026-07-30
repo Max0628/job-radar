@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -61,6 +62,10 @@ public class YouratorListScraper implements JobListScraper {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.meterRegistry = meterRegistry;
+        // connect/read timeout 由注入的 restClientBuilder 帶（見
+        // dev.jobradar.collector.config.HttpClientConfig）——刻意不在這裡呼叫
+        // requestFactory()，那樣會讓單元測試的 MockRestServiceServer 綁定失效
+        // （已實際踩過這個坑，見 HttpClientConfig 的類別註解）。
         this.restClient = restClientBuilder
                 .baseUrl(BASE_URL)
                 .defaultHeader(HttpHeaders.USER_AGENT, properties.userAgent())
@@ -174,6 +179,17 @@ public class YouratorListScraper implements JobListScraper {
                 }
                 long backoffMillis = 2000L * attempt;
                 log.warn("Yourator returned 429 for page={}, retry {} after {}ms", page, attempt, backoffMillis);
+                sleep(backoffMillis);
+            } catch (ResourceAccessException e) {
+                // 連線/讀取逾時等 I/O 層級的偶發問題，跟 429 一樣值得重試——見建構子註解
+                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE, "reason", "io_timeout").increment();
+                if (attempt >= MAX_RETRY) {
+                    throw new IllegalStateException(
+                            "Yourator request failed after " + MAX_RETRY + " retries (page " + page + ")", e);
+                }
+                long backoffMillis = 2000L * attempt;
+                log.warn("Yourator I/O error for page={}, retry {} after {}ms: {}",
+                        page, attempt, backoffMillis, e.getMessage());
                 sleep(backoffMillis);
             } catch (Exception e) {
                 throw new IllegalStateException("Failed to fetch Yourator page " + page, e);
