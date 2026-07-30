@@ -1,0 +1,37 @@
+{
+  "payload": {
+    "categoryGroups": [
+      {
+        "id": 7,
+        "name": "軟體開發",
+        "jobCategories": [
+          {"id": 23, "name": "後端工程"},
+          {"id": 24, "name": "全端工程"},
+          {"id": 27, "name": "測試工程"}
+        ]
+      },
+      {
+        "id": 6,
+        "name": "軟硬體系統整合",
+        "jobCategories": [
+          {"id": 20, "name": "硬體工程"}
+        ]
+      },
+      {
+        "id": 3,
+        "name": "系統與基礎架構",
+        "jobCategories": [
+          {"id": 100, "name": "雲端工程師"},
+          {"id": 101, "name": "系統架構師"}
+        ]
+      },
+      {
+        "id": 2,
+        "name": "行銷 / 企劃 / 內容",
+        "jobCategories": [
+          {"id": 200, "name": "行銷企劃 / 社群經營"}
+        ]
+      }
+    ]
+  }
+}

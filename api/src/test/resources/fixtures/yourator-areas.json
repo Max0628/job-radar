@@ -1,0 +1,8 @@
+{
+  "payload": {
+    "areas": [
+      {"value": "TPE", "name": "臺北市", "zone": "北部"},
+      {"value": "NWT", "name": "新北市", "zone": "北部"}
+    ]
+  }
+}

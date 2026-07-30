@@ -1,0 +1,19 @@
+{
+  "total_entries": 10000,
+  "data": [],
+  "available_facets": {
+    "professions": [
+      "it_back-end-engineer",
+      "it_qa-test-engineer",
+      "it_firmware-engineering",
+      "customer-service_retail-salesperson",
+      "it_devops-system-admin"
+    ],
+    "locations": [
+      "Taiwan",
+      "台灣",
+      "台北市, 台灣",
+      "Vietnam"
+    ]
+  }
+}
