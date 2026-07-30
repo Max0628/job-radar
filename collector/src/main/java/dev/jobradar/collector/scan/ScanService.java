@@ -46,8 +46,9 @@ public class ScanService {
             return;
         }
 
+        String queryCategories = query.categories() == null ? "" : String.join(",", query.categories());
         Instant startedAt = Instant.now();
-        long runId = runRepository.startRun(query.source(), query.keyword(), startedAt);
+        long runId = runRepository.startRun(query.source(), queryCategories, startedAt);
         Timer.Sample sample = Timer.start(meterRegistry);
 
         try {
@@ -78,10 +79,10 @@ public class ScanService {
                     .tag("source", query.source())
                     .register(meterRegistry));
 
-            log.info("Scan finished source={} keyword={} pages={} jobsDiscovered={}",
-                    query.source(), query.keyword(), result.pagesScanned(), result.discovered().size());
+            log.info("Scan finished source={} categories={} pages={} jobsDiscovered={}",
+                    query.source(), queryCategories, result.pagesScanned(), result.discovered().size());
         } catch (Exception e) {
-            log.error("Scan failed source={} keyword={}", query.source(), query.keyword(), e);
+            log.error("Scan failed source={} categories={}", query.source(), queryCategories, e);
             runRepository.finishRunFailed(runId, Instant.now(), e.getMessage());
 
             meterRegistry.counter("jobradar.scan", "source", query.source(), "result", "failure").increment();

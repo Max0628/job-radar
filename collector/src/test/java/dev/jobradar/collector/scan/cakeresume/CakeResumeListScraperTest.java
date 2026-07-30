@@ -45,7 +45,7 @@ class CakeResumeListScraperTest {
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
         CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder, new SimpleMeterRegistry());
-        SearchQuery query = new SearchQuery(1, "cakeresume", "後端工程師", "Taipei", List.of(), 10, 120, true);
+        SearchQuery query = new SearchQuery(1, "cakeresume", "Taipei", List.of(), 120, true);
 
         ScanResult result = scraper.scan(query);
 
@@ -63,23 +63,40 @@ class CakeResumeListScraperTest {
         server.verify();
     }
 
+    /**
+     * 沒有頁數上限（見 add-crawl-improvements design.md），翻頁安全網之一是偵測
+     * 「前後兩頁職缺集合完全相同」——分頁 API 常見的隱性 bug：頁碼超出真實範圍後
+     * 悄悄重複回傳同一批內容，total_entries 比對完全不會反映這種情況。
+     */
     @Test
-    void stopsAtMaxPagesEvenIfMoreEntriesRemain() throws Exception {
+    void stopsWhenConsecutivePagesReturnIdenticalJobSet() throws Exception {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
 
         server.expect(requestTo(containsString("/api/client/v1/jobs/search")))
                 .andExpect(content().string(containsString("\"page\":1")))
-                .andRespond(withSuccess(fixture("cakeresume-search-page1.json"), MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess(fixture("cakeresume-search-page1-large-total.json"), MediaType.APPLICATION_JSON));
+        // page=2 回傳跟 page=1 完全相同的 path 集合，total_entries 仍顯示還有更多——模擬分頁卡住
+        server.expect(requestTo(containsString("/api/client/v1/jobs/search")))
+                .andExpect(content().string(containsString("\"page\":2")))
+                .andRespond(withSuccess(fixture("cakeresume-search-page1-large-total.json"), MediaType.APPLICATION_JSON));
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
-        CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder, new SimpleMeterRegistry());
-        SearchQuery query = new SearchQuery(1, "cakeresume", "後端工程師", "Taipei", List.of(), 1, 120, true);
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder, meterRegistry);
+        SearchQuery query = new SearchQuery(1, "cakeresume", "Taipei", List.of(), 120, true);
 
         ScanResult result = scraper.scan(query);
 
+        // 只採計第一頁（重複的第二頁被丟棄，不重複計入），不是失敗（沒有拋例外）
         assertThat(result.pagesScanned()).isEqualTo(1);
         assertThat(result.discovered()).hasSize(2);
+        assertThat(meterRegistry.get("jobradar.scrape.anomaly")
+                        .tag("source", "cakeresume")
+                        .tag("reason", "duplicate_page")
+                        .counter()
+                        .count())
+                .isEqualTo(1.0);
         server.verify();
     }
 
@@ -93,12 +110,12 @@ class CakeResumeListScraperTest {
                 .andRespond(MockRestResponseCreators.withStatus(HttpStatus.TOO_MANY_REQUESTS));
         server.expect(requestTo(containsString("/api/client/v1/jobs/search")))
                 .andExpect(content().string(containsString("\"page\":1")))
-                .andRespond(withSuccess(fixture("cakeresume-search-page1.json"), MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess(fixture("cakeresume-search-single-page.json"), MediaType.APPLICATION_JSON));
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "cakeresume", "後端工程師", "Taipei", List.of(), 1, 120, true);
+        SearchQuery query = new SearchQuery(1, "cakeresume", "Taipei", List.of(), 120, true);
 
         scraper.scan(query);
 

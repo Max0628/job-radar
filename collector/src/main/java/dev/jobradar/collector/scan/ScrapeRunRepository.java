@@ -14,14 +14,14 @@ public class ScrapeRunRepository {
         this.jdbcClient = jdbcClient;
     }
 
-    public long startRun(String source, String queryKeyword, Instant startedAt) {
+    public long startRun(String source, String queryCategories, Instant startedAt) {
         return jdbcClient.sql("""
-                        INSERT INTO scrape_runs (source, query_keyword, started_at, status)
-                        VALUES (:source, :queryKeyword, :startedAt, 'running')
+                        INSERT INTO scrape_runs (source, query_categories, started_at, status)
+                        VALUES (:source, :queryCategories, :startedAt, 'running')
                         RETURNING id
                         """)
                 .param("source", source)
-                .param("queryKeyword", queryKeyword)
+                .param("queryCategories", queryCategories)
                 .param("startedAt", Timestamp.from(startedAt))
                 .query(Long.class)
                 .single();

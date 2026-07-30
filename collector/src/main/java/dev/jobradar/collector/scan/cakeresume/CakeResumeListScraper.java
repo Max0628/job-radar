@@ -9,8 +9,12 @@ import dev.jobradar.collector.scan.JobListScraper;
 import dev.jobradar.collector.scan.ScanResult;
 import dev.jobradar.common.domain.SearchQuery;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -25,7 +29,11 @@ import org.springframework.web.client.RestClient;
  * 與 Yourator 不同之處：
  * - 一次 API 就返回完整數據，無需 detail fetching（needsDetail=false）
  * - POST 請求，request body 包含 query / filters / page / sort_by
- * - 無明確時間排序，亦採用固定頁數掃描策略
+ * - 有明確的 total_entries 可以核對「是否真的翻完」，Yourator 完全沒有這種欄位
+ *
+ * 刻意不設頁數上限（見 add-crawl-improvements design.md），改用兩個安全網，理由與
+ * YouratorListScraper 相同（見該類別註解）：單輪掃描時間上限 + 前後兩頁職缺集合完全
+ * 相同時視為分頁卡住。兩者都不當作失敗，只記警告 + anomaly 計數器。
  */
 @Component
 public class CakeResumeListScraper implements JobListScraper {
@@ -34,6 +42,7 @@ public class CakeResumeListScraper implements JobListScraper {
     private static final String SOURCE = "cakeresume";
     private static final String BASE_URL = "https://api.cake.me";
     private static final int MAX_RETRY = 3;
+    private static final Duration MAX_SCAN_DURATION = Duration.ofMinutes(15);
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -66,12 +75,28 @@ public class CakeResumeListScraper implements JobListScraper {
     @Override
     public ScanResult scan(SearchQuery query) {
         List<DiscoveredJob> discovered = new ArrayList<>();
+        Set<String> previousPageIds = null;
+        Instant deadline = Instant.now().plus(MAX_SCAN_DURATION);
         int page = 1;
+        // 獨立計數「真的採用的頁數」，不要從 page 這個迴圈控制變數反推——這個變數的
+        // 遞增時機只在「確定要繼續下一頁」的分支才發生，安全網 break 出去時 page 的
+        // 值跟「已經真的採用幾頁」對不上，直接數採用次數才不會有 off-by-one
+        int pagesScanned = 0;
 
-        while (page <= query.maxPages()) {
-            JsonNode response = searchPage(query.keyword(), query.location(), query.categories(), page);
+        while (true) {
+            if (Instant.now().isAfter(deadline)) {
+                log.warn("CakeResume scan exceeded {} time budget at page={} for query id={}, "
+                                + "stopping with {} jobs already discovered",
+                        MAX_SCAN_DURATION, page, query.id(), discovered.size());
+                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE, "reason", "timeout").increment();
+                break;
+            }
+
+            JsonNode response = searchPage(query.location(), query.categories(), page);
             JsonNode dataArray = response.path("data");
 
+            List<DiscoveredJob> pageItems = new ArrayList<>();
+            Set<String> currentPageIds = new HashSet<>();
             for (JsonNode item : dataArray) {
                 // 真實 API 回應沒有 id 欄位（已用真實資料驗證過，見端到端測試發現），
                 // path 是 CakeResume 職缺頁的 slug，本身就是全站唯一識別碼，拿來當 sourceJobId
@@ -84,15 +109,31 @@ public class CakeResumeListScraper implements JobListScraper {
                 String detailUrl = "https://www.cake.me/companies/" + companySlug + "/jobs/" + path;
 
                 // CakeResume search 已含完整數據，不需 detail fetching
-                discovered.add(new DiscoveredJob(sourceJobId, detailUrl, item, false, null));
+                pageItems.add(new DiscoveredJob(sourceJobId, detailUrl, item, false, null));
+                currentPageIds.add(sourceJobId);
             }
+
+            // 分頁 API 常見的隱性 bug：頁碼超出真實範圍後悄悄重複回傳同一批內容，
+            // total_entries 比對完全不會反映這種情況（見 class 註解），獨立檢查
+            if (!currentPageIds.isEmpty() && currentPageIds.equals(previousPageIds)) {
+                log.warn("CakeResume page={} returned identical job set to previous page for query id={}, "
+                                + "stopping (pagination appears stuck)",
+                        page, query.id());
+                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE, "reason", "duplicate_page")
+                        .increment();
+                break;
+            }
+
+            discovered.addAll(pageItems);
+            previousPageIds = currentPageIds;
+            pagesScanned++;
 
             // 用累積筆數判斷是否還有下一頁，不能用單頁筆數回推（最後一頁筆數通常不足整頁，
             // 用「page * 當頁筆數」回推會誤判還有下一頁，多打一次空請求）
             int totalEntries = response.path("total_entries").asInt(0);
             boolean hasNextPage = discovered.size() < totalEntries;
 
-            if (!hasNextPage || page >= query.maxPages()) {
+            if (!hasNextPage) {
                 break;
             }
 
@@ -100,16 +141,20 @@ public class CakeResumeListScraper implements JobListScraper {
             sleep(properties.requestIntervalMillis());
         }
 
-        return new ScanResult(discovered, page);
+        return new ScanResult(discovered, pagesScanned);
     }
 
-    private JsonNode searchPage(String keyword, String location, List<String> professions, int page) {
+    private JsonNode searchPage(String location, List<String> professions, int page) {
         int attempt = 0;
         while (true) {
             attempt++;
             try {
                 ObjectNode body = objectMapper.createObjectNode();
-                body.put("query", keyword == null ? "" : keyword);
+                // query 是必填欄位（缺了會回 422），但 add-crawl-improvements 之後不再
+                // 支援自由輸入關鍵字——這裡固定送空字串，等同「不限關鍵字」，完全靠
+                // professions 篩選（已實測證實是真正的聯集，見 design.md；CakeResume
+                // 的 query 欄位反而不支援聯集語意，這也是拿掉它的原因之一）。
+                body.put("query", "");
 
                 ObjectNode filters = objectMapper.createObjectNode();
                 // filters.location（單數、字串）是 no-op，實測拿明顯不相關的地區測試
@@ -143,11 +188,10 @@ public class CakeResumeListScraper implements JobListScraper {
                     throw new IllegalStateException("CakeResume rate limited after " + MAX_RETRY + " retries", e);
                 }
                 long backoffMillis = 2000L * attempt;
-                log.warn("CakeResume returned 429 for keyword={} page={}, retry {} after {}ms",
-                        keyword, page, attempt, backoffMillis);
+                log.warn("CakeResume returned 429 for page={}, retry {} after {}ms", page, attempt, backoffMillis);
                 sleep(backoffMillis);
             } catch (Exception e) {
-                throw new IllegalStateException("Failed to fetch CakeResume page " + page + " for keyword " + keyword, e);
+                throw new IllegalStateException("Failed to fetch CakeResume page " + page, e);
             }
         }
     }

@@ -3,12 +3,10 @@ package dev.jobradar.api.searchquery;
 import dev.jobradar.common.domain.SearchQuery;
 import java.util.List;
 import java.util.Map;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -56,6 +54,7 @@ public class SearchQueryController {
     @PostMapping("/api/search-queries")
     public ResponseEntity<SearchQuery> create(@RequestBody SearchQuery request) {
         validateSource(request.source());
+        validateCategoriesNotEmpty(request.categories());
         SearchQuery created = repository.insert(request);
 
         ResponseEntity.BodyBuilder response = ResponseEntity.status(HttpStatus.CREATED);
@@ -66,6 +65,7 @@ public class SearchQueryController {
     @PutMapping("/api/search-queries/{id}")
     public ResponseEntity<SearchQuery> update(@PathVariable long id, @RequestBody SearchQuery request) {
         validateSource(request.source());
+        validateCategoriesNotEmpty(request.categories());
         SearchQuery updated = repository.update(id, request)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
 
@@ -88,26 +88,21 @@ public class SearchQueryController {
         return ResponseEntity.ok(Map.of("id", id));
     }
 
-    /**
-     * search_queries 有 UNIQUE (source, keyword) 約束（V1 schema，當時假設每列 keyword
-     * 都不同）。Phase 002+ 之後 keyword 常是空字串（改用 categories 當主要篩選維度，
-     * 見 design.md D8），同一 source 若已有一列空 keyword，再插入一列同樣空 keyword
-     * 就會撞這個約束。這裡先確保 API 回傳清楚的 409 而不是 500，底層約束是否要調整
-     * （例如改成 (source, keyword, categories) 或乾脆拿掉）留待實際使用後再評估。
-     */
-    @ExceptionHandler(DuplicateKeyException.class)
-    public ResponseEntity<String> handleDuplicateKey() {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body("A search query with the same source and keyword already exists. "
-                        + "If you're using an empty keyword with categories, note that only one "
-                        + "empty-keyword row per source is currently allowed (see known limitation "
-                        + "in design.md D8).");
-    }
-
     private void validateSource(String source) {
         if (!SearchQueryRepository.registeredSources().contains(source)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "source must be one of " + SearchQueryRepository.registeredSources());
+        }
+    }
+
+    /**
+     * 拿掉 keyword 之後，categories 是唯一還能限縮搜尋範圍的欄位（見
+     * add-crawl-improvements design.md）——留空會變成「不限任何條件，把整個平台
+     * 的職缺都抓下來」，幾乎不會是使用者真正想要的，直接在建立/更新時擋掉。
+     */
+    private void validateCategoriesNotEmpty(List<String> categories) {
+        if (categories == null || categories.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "categories must not be empty");
         }
     }
 

@@ -8,8 +8,13 @@ import dev.jobradar.collector.scan.JobListScraper;
 import dev.jobradar.collector.scan.ScanResult;
 import dev.jobradar.common.domain.SearchQuery;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -19,8 +24,19 @@ import org.springframework.web.client.RestClient;
 
 /**
  * Yourator 沒有精確的更新時間排序（見 design.md 附錄），list 預設順序是相關性排序，
- * 不是 chronological，因此不做游標式 early termination，改為每輪固定掃描
- * query.maxPages() 頁；重複看到的職缺交由下游冪等 upsert 處理。
+ * 不是 chronological，因此不做游標式 early termination；也沒有任何「總筆數」欄位
+ * （`payload` 只有 `hasMore`，沒有 total/totalCount），翻頁純粹依賴 `hasMore` 判斷，
+ * 沒有辦法像 CakeResume 那樣拿 total_entries 做二次確認（見 add-crawl-improvements
+ * design.md 實測記錄）。重複看到的職缺交由下游冪等 upsert 處理。
+ *
+ * 刻意不設頁數上限（見 add-crawl-improvements design.md）：改用兩個對應到具體異常模式
+ * 的安全網，而非任意選一個頁數當上限——
+ * 1. 單輪掃描時間上限（MAX_SCAN_DURATION）：正常情況下不會被打到，只在 `hasMore`
+ *    真的卡住不掉時避免整輪排程被無限拖住
+ * 2. 前後兩頁完全相同的職缺集合（分頁 API 常見的隱性 bug：頁碼超出真實範圍後悄悄
+ *    重複回傳同一批內容，`hasMore` 完全不會反映這種情況）
+ * 兩者觸發時都不當成失敗（不拋例外、不丟掉已經抓到的資料），只記警告 log + 一個
+ * 獨立的 anomaly 計數器，讓異常「看得見」但不會讓這輪掃描白費。
  */
 @Component
 public class YouratorListScraper implements JobListScraper {
@@ -29,6 +45,7 @@ public class YouratorListScraper implements JobListScraper {
     private static final String SOURCE = "yourator";
     private static final String BASE_URL = "https://www.yourator.co";
     private static final int MAX_RETRY = 3;
+    private static final Duration MAX_SCAN_DURATION = Duration.ofMinutes(15);
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -67,48 +84,76 @@ public class YouratorListScraper implements JobListScraper {
         }
 
         List<DiscoveredJob> discovered = new ArrayList<>();
+        Set<String> previousPageIds = null;
+        Instant deadline = Instant.now().plus(MAX_SCAN_DURATION);
         int page = 1;
+        // 獨立計數「真的採用的頁數」，不要從 page 這個迴圈控制變數反推——這個變數的
+        // 遞增時機只在「確定要繼續下一頁」的分支才發生，安全網 break 出去時 page 的
+        // 值跟「已經真的採用幾頁」對不上，直接數採用次數才不會有 off-by-one
+        int pagesScanned = 0;
         boolean hasMore = true;
 
-        while (hasMore && page <= query.maxPages()) {
-            JsonNode body = fetchPage(query.keyword(), query.location(), query.categories(), page);
+        while (hasMore) {
+            if (Instant.now().isAfter(deadline)) {
+                log.warn("Yourator scan exceeded {} time budget at page={} for query id={}, "
+                                + "stopping with {} jobs already discovered",
+                        MAX_SCAN_DURATION, page, query.id(), discovered.size());
+                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE, "reason", "timeout").increment();
+                break;
+            }
+
+            JsonNode body = fetchPage(query.location(), query.categories(), page);
             JsonNode payload = body.path("payload");
 
+            List<DiscoveredJob> pageItems = new ArrayList<>();
+            Set<String> currentPageIds = new HashSet<>();
             for (JsonNode item : payload.path("jobs")) {
                 String sourceJobId = item.path("id").asText();
                 String path = item.path("path").asText();
-                discovered.add(new DiscoveredJob(sourceJobId, BASE_URL + path, item));
+                pageItems.add(new DiscoveredJob(sourceJobId, BASE_URL + path, item));
+                currentPageIds.add(sourceJobId);
             }
 
+            // 分頁 API 常見的隱性 bug：頁碼超出真實範圍後悄悄重複回傳同一批內容，
+            // hasMore 完全不會反映這種情況（見 class 註解），所以獨立檢查
+            if (!currentPageIds.isEmpty() && currentPageIds.equals(previousPageIds)) {
+                log.warn("Yourator page={} returned identical job set to previous page for query id={}, "
+                                + "stopping (pagination appears stuck)",
+                        page, query.id());
+                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE, "reason", "duplicate_page")
+                        .increment();
+                break;
+            }
+
+            discovered.addAll(pageItems);
+            previousPageIds = currentPageIds;
+            pagesScanned++;
+
             hasMore = payload.path("hasMore").asBoolean(false);
-            boolean willFetchAnotherPage = hasMore && page < query.maxPages();
             page++;
 
-            if (willFetchAnotherPage) {
+            if (hasMore) {
                 sleep(properties.requestIntervalMillis());
             }
         }
 
-        return new ScanResult(discovered, page - 1);
+        return new ScanResult(discovered, pagesScanned);
     }
 
-    private JsonNode fetchPage(String keyword, String areaCode, List<String> categories, int page) {
+    private JsonNode fetchPage(String areaCode, List<String> categories, int page) {
         int attempt = 0;
         while (true) {
             attempt++;
             try {
-                // 正確參數是 term[]/area[]/category[]/sort，不是 keyword（見 design.md 側錄
-                // 更正紀錄，keyword 對這支 API 完全無效，送什麼都回同一批未過濾結果）。
-                // term[] 只在 keyword 非空白時送出——分類篩選（category[]）已足夠精準時，
-                // keyword 通常留空，不強迫帶一個空字串當關鍵字。
+                // 正確參數是 area[]/category[]/sort。keyword 對這支 API 完全無效（見
+                // design.md 側錄更正紀錄，term[] 送什麼都回同一批未過濾結果的年代已經
+                // 過去），add-crawl-improvements 之後乾脆整個拿掉自由輸入的關鍵字，
+                // 完全靠 category[] 篩選（已實測證實是真正的聯集，見 design.md）。
                 String body = restClient.get()
                         .uri(uriBuilder -> {
                             uriBuilder.path("/api/v4/jobs/")
                                     .queryParam("sort", "most_related")
                                     .queryParam("page", page);
-                            if (keyword != null && !keyword.isBlank()) {
-                                uriBuilder.queryParam("term[]", keyword);
-                            }
                             if (areaCode != null && !areaCode.isBlank()) {
                                 uriBuilder.queryParam("area[]", areaCode);
                             }
@@ -128,11 +173,10 @@ public class YouratorListScraper implements JobListScraper {
                     throw new IllegalStateException("Yourator rate limited after " + MAX_RETRY + " retries", e);
                 }
                 long backoffMillis = 2000L * attempt;
-                log.warn("Yourator returned 429 for keyword={} page={}, retry {} after {}ms",
-                        keyword, page, attempt, backoffMillis);
+                log.warn("Yourator returned 429 for page={}, retry {} after {}ms", page, attempt, backoffMillis);
                 sleep(backoffMillis);
             } catch (Exception e) {
-                throw new IllegalStateException("Failed to fetch Yourator page " + page + " for keyword " + keyword, e);
+                throw new IllegalStateException("Failed to fetch Yourator page " + page, e);
             }
         }
     }

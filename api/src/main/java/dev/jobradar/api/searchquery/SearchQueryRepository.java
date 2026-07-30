@@ -25,9 +25,7 @@ public class SearchQueryRepository {
     private static final Map<String, String> SORTABLE_COLUMNS = Map.of(
             "id", "id",
             "source", "source",
-            "keyword", "keyword",
             "location", "location",
-            "maxPages", "max_pages",
             "intervalMinutes", "interval_minutes",
             "enabled", "enabled"
     );
@@ -46,7 +44,7 @@ public class SearchQueryRepository {
         int limit = Math.max(0, end - start);
 
         return jdbcClient.sql("""
-                        SELECT id, source, keyword, location, categories, max_pages, interval_minutes, enabled
+                        SELECT id, source, location, categories, interval_minutes, enabled
                         FROM search_queries
                         ORDER BY %s %s
                         LIMIT :limit OFFSET :offset
@@ -65,7 +63,7 @@ public class SearchQueryRepository {
 
     public Optional<SearchQuery> findById(long id) {
         return jdbcClient.sql("""
-                        SELECT id, source, keyword, location, categories, max_pages, interval_minutes, enabled
+                        SELECT id, source, location, categories, interval_minutes, enabled
                         FROM search_queries WHERE id = :id
                         """)
                 .param("id", id)
@@ -75,16 +73,14 @@ public class SearchQueryRepository {
 
     public SearchQuery insert(SearchQuery query) {
         Long id = jdbcClient.sql("""
-                        INSERT INTO search_queries (source, keyword, location, categories,
-                                                     max_pages, interval_minutes, enabled)
-                        VALUES (:source, :keyword, :location, :categories, :maxPages, :intervalMinutes, :enabled)
+                        INSERT INTO search_queries (source, location, categories,
+                                                     interval_minutes, enabled)
+                        VALUES (:source, :location, :categories, :intervalMinutes, :enabled)
                         RETURNING id
                         """)
                 .param("source", query.source())
-                .param("keyword", query.keyword() == null ? "" : query.keyword())
                 .param("location", query.location())
                 .param("categories", toJsonb(query.categories()))
-                .param("maxPages", query.maxPages())
                 .param("intervalMinutes", query.intervalMinutes())
                 .param("enabled", query.enabled())
                 .query(Long.class)
@@ -96,16 +92,14 @@ public class SearchQueryRepository {
     public Optional<SearchQuery> update(long id, SearchQuery query) {
         int updated = jdbcClient.sql("""
                         UPDATE search_queries
-                        SET source = :source, keyword = :keyword, location = :location,
-                            categories = :categories, max_pages = :maxPages,
+                        SET source = :source, location = :location,
+                            categories = :categories,
                             interval_minutes = :intervalMinutes, enabled = :enabled
                         WHERE id = :id
                         """)
                 .param("source", query.source())
-                .param("keyword", query.keyword() == null ? "" : query.keyword())
                 .param("location", query.location())
                 .param("categories", toJsonb(query.categories()))
-                .param("maxPages", query.maxPages())
                 .param("intervalMinutes", query.intervalMinutes())
                 .param("enabled", query.enabled())
                 .param("id", id)
@@ -132,10 +126,8 @@ public class SearchQueryRepository {
         return new SearchQuery(
                 rs.getLong("id"),
                 rs.getString("source"),
-                rs.getString("keyword"),
                 rs.getString("location"),
                 parseCategories(rs.getString("categories")),
-                rs.getInt("max_pages"),
                 rs.getInt("interval_minutes"),
                 rs.getBoolean("enabled")
         );

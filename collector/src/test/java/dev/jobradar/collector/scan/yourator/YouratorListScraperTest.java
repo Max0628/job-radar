@@ -38,7 +38,7 @@ class YouratorListScraperTest {
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
         YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder, new SimpleMeterRegistry());
-        SearchQuery query = new SearchQuery(1, "yourator", "devops", "TPE", List.of(), 10, 120, true);
+        SearchQuery query = new SearchQuery(1, "yourator", "TPE", List.of(), 120, true);
 
         ScanResult result = scraper.scan(query);
 
@@ -52,22 +52,38 @@ class YouratorListScraperTest {
         server.verify();
     }
 
+    /**
+     * 沒有頁數上限（見 add-crawl-improvements design.md），翻頁安全網之一是偵測
+     * 「前後兩頁職缺集合完全相同」——分頁 API 常見的隱性 bug：頁碼超出真實範圍後
+     * 悄悄重複回傳同一批內容，hasMore 完全不會反映這種情況。
+     */
     @Test
-    void stopsAtMaxPagesEvenIfHasMoreIsTrue() throws Exception {
+    void stopsWhenConsecutivePagesReturnIdenticalJobSet() throws Exception {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
 
         server.expect(requestTo(containsString("page=1")))
                 .andRespond(withSuccess(fixture("yourator-list-page1.json"), MediaType.APPLICATION_JSON));
+        // page=2 回傳跟 page=1 完全相同的 job id 集合，hasMore 仍是 true——模擬分頁卡住
+        server.expect(requestTo(containsString("page=2")))
+                .andRespond(withSuccess(fixture("yourator-list-page1-duplicate.json"), MediaType.APPLICATION_JSON));
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
-        YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder, new SimpleMeterRegistry());
-        SearchQuery query = new SearchQuery(1, "yourator", "devops", "TPE", List.of(), 1, 120, true);
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder, meterRegistry);
+        SearchQuery query = new SearchQuery(1, "yourator", "TPE", List.of(), 120, true);
 
         ScanResult result = scraper.scan(query);
 
+        // 只採計第一頁（重複的第二頁被丟棄，不重複計入），不是失敗（沒有拋例外）
         assertThat(result.pagesScanned()).isEqualTo(1);
         assertThat(result.discovered()).hasSize(2);
+        assertThat(meterRegistry.get("jobradar.scrape.anomaly")
+                        .tag("source", "yourator")
+                        .tag("reason", "duplicate_page")
+                        .counter()
+                        .count())
+                .isEqualTo(1.0);
         server.verify();
     }
 
@@ -79,12 +95,12 @@ class YouratorListScraperTest {
         server.expect(requestTo(containsString("page=1")))
                 .andRespond(MockRestResponseCreators.withStatus(HttpStatus.TOO_MANY_REQUESTS));
         server.expect(requestTo(containsString("page=1")))
-                .andRespond(withSuccess(fixture("yourator-list-page1.json"), MediaType.APPLICATION_JSON));
+                .andRespond(withSuccess(fixture("yourator-list-page2.json"), MediaType.APPLICATION_JSON));
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "yourator", "devops", "TPE", List.of(), 1, 120, true);
+        SearchQuery query = new SearchQuery(1, "yourator", "TPE", List.of(), 120, true);
 
         scraper.scan(query);
 

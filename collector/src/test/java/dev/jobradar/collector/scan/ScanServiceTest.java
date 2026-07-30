@@ -48,7 +48,7 @@ class ScanServiceTest {
         when(runRepository.startRun(anyString(), anyString(), any(Instant.class))).thenReturn(1L);
 
         ScanService service = new ScanService(List.of(scraper), cursorRepository, runRepository, kafkaTemplate, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "yourator", "devops", null, List.of(), 10, 120, true);
+        SearchQuery query = new SearchQuery(1, "yourator", null, List.of(), 120, true);
 
         service.runScan(query);
 
@@ -87,7 +87,7 @@ class ScanServiceTest {
         when(runRepository.startRun(anyString(), anyString(), any(Instant.class))).thenReturn(1L);
 
         ScanService service = new ScanService(List.of(scraper), cursorRepository, runRepository, kafkaTemplate, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "yourator", "devops", null, List.of(), 10, 120, true);
+        SearchQuery query = new SearchQuery(1, "yourator", null, List.of(), 120, true);
 
         service.runScan(query);
 

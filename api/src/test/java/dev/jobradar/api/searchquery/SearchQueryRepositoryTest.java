@@ -63,8 +63,8 @@ class SearchQueryRepositoryTest {
 
     @Test
     void insertsAndReadsBackWithCategories() {
-        SearchQuery request = new SearchQuery(0, "yourator", "", "TPE",
-                List.of("後端工程", "DevOps / SRE"), 10, 120, true);
+        SearchQuery request = new SearchQuery(0, "yourator", "TPE",
+                List.of("後端工程", "DevOps / SRE"), 120, true);
 
         SearchQuery created = repository.insert(request);
 
@@ -78,8 +78,10 @@ class SearchQueryRepositoryTest {
 
     @Test
     void insertWithNullCategoriesReadsBackAsEmptyList() {
-        SearchQuery request = new SearchQuery(0, "cakeresume", "devops", "台北市, 台灣",
-                null, 10, 120, true);
+        // 拿掉 keyword 之後 API 層會擋空 categories（見 SearchQueryController），
+        // 但 repository 本身仍應忠實反映 DB 現況，不多做隱性假設
+        SearchQuery request = new SearchQuery(0, "cakeresume", "台北市, 台灣",
+                null, 120, true);
 
         SearchQuery created = repository.insert(request);
 
@@ -89,24 +91,22 @@ class SearchQueryRepositoryTest {
     @Test
     void updateChangesFields() {
         SearchQuery created = repository.insert(
-                new SearchQuery(0, "yourator", "old", "TPE", List.of("後端工程"), 10, 120, true));
+                new SearchQuery(0, "yourator", "TPE", List.of("後端工程"), 120, true));
 
         Optional<SearchQuery> updated = repository.update(created.id(),
-                new SearchQuery(created.id(), "yourator", "new", "NWT",
-                        List.of("全端工程", "資料庫"), 5, 60, false));
+                new SearchQuery(created.id(), "yourator", "NWT",
+                        List.of("全端工程", "資料庫"), 60, false));
 
         assertThat(updated).isPresent();
-        assertThat(updated.get().keyword()).isEqualTo("new");
         assertThat(updated.get().location()).isEqualTo("NWT");
         assertThat(updated.get().categories()).containsExactly("全端工程", "資料庫");
-        assertThat(updated.get().maxPages()).isEqualTo(5);
         assertThat(updated.get().enabled()).isFalse();
     }
 
     @Test
     void updateNonExistentIdReturnsEmpty() {
         Optional<SearchQuery> result = repository.update(999_999L,
-                new SearchQuery(999_999L, "yourator", "x", null, null, 1, 1, true));
+                new SearchQuery(999_999L, "yourator", null, null, 1, true));
 
         assertThat(result).isEmpty();
     }
@@ -114,7 +114,7 @@ class SearchQueryRepositoryTest {
     @Test
     void deleteRemovesRowAndAssociatedCursor() {
         SearchQuery created = repository.insert(
-                new SearchQuery(0, "yourator", "x", null, null, 1, 1, true));
+                new SearchQuery(0, "yourator", null, null, 1, true));
         jdbcClient.sql("INSERT INTO scrape_cursors (search_query_id) VALUES (:id)")
                 .param("id", created.id())
                 .update();
@@ -137,16 +137,17 @@ class SearchQueryRepositoryTest {
 
     @Test
     void findAllRespectsSortAndPagination() {
-        repository.insert(new SearchQuery(0, "yourator", "b", null, null, 1, 1, true));
-        repository.insert(new SearchQuery(0, "yourator", "a", null, null, 1, 1, true));
-        repository.insert(new SearchQuery(0, "yourator", "c", null, null, 1, 1, true));
+        // keyword 拿掉之後改用 location 當排序區分依據，測試意圖不變：驗證排序跟分頁
+        repository.insert(new SearchQuery(0, "yourator", "b", null, 1, true));
+        repository.insert(new SearchQuery(0, "yourator", "a", null, 1, true));
+        repository.insert(new SearchQuery(0, "yourator", "c", null, 1, true));
 
-        List<SearchQuery> sorted = repository.findAll(0, 10, "keyword", "ASC");
+        List<SearchQuery> sorted = repository.findAll(0, 10, "location", "ASC");
 
-        assertThat(sorted).extracting(SearchQuery::keyword).containsExactly("a", "b", "c");
+        assertThat(sorted).extracting(SearchQuery::location).containsExactly("a", "b", "c");
         assertThat(repository.count()).isEqualTo(3);
 
-        List<SearchQuery> page = repository.findAll(0, 2, "keyword", "ASC");
+        List<SearchQuery> page = repository.findAll(0, 2, "location", "ASC");
         assertThat(page).hasSize(2);
     }
 }
