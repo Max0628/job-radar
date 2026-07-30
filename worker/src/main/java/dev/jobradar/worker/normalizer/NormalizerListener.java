@@ -64,8 +64,23 @@ public class NormalizerListener {
             String contentHash = ContentHash.of(normalized);
             String payloadJson = envelope.payload().toString();
 
-            rawDocumentRepository.insertIgnore(envelope.source(), envelope.sourceJobId(), envelope.scrapedAt(), payloadJson);
-            snapshotRepository.insertIgnore(envelope.source(), envelope.sourceJobId(), envelope.scrapedAt(), normalized, contentHash);
+            // 內容沒變就不寫 job_snapshots／raw_documents（見 add-crawl-improvements
+            // design.md）：同一筆職缺每次被掃到都會走到這裡，2 小時一輪、上百筆職缺，
+            // 內容沒變的話兩張表會無意義地一直長大（實測過 411 筆真實職缺卻堆出
+            // 11,597 筆快照，其中一筆職缺甚至有 61 份幾乎一樣的快照）。只有真的是
+            // 新職缺、或內容雜湊真的不同時才寫；jobs 本身的 upsert 不受影響，
+            // 每次都跑，維持 last_seen_at 更新。
+            String previousHash = jobRepository.findContentHash(envelope.source(), envelope.sourceJobId())
+                    .orElse(null);
+            boolean contentChanged = previousHash == null || !previousHash.equals(contentHash);
+
+            if (contentChanged) {
+                rawDocumentRepository.insertIgnore(envelope.source(), envelope.sourceJobId(), envelope.scrapedAt(), payloadJson);
+                snapshotRepository.insertIgnore(envelope.source(), envelope.sourceJobId(), envelope.scrapedAt(), normalized, contentHash);
+                meterRegistry.counter("jobradar.snapshot.write", "source", envelope.source(), "result", "written").increment();
+            } else {
+                meterRegistry.counter("jobradar.snapshot.write", "source", envelope.source(), "result", "skipped").increment();
+            }
 
             boolean isNew = jobRepository.upsert(
                     envelope.source(), envelope.sourceJobId(), envelope.url(), normalized,

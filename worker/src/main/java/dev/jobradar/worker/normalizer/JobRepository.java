@@ -3,6 +3,7 @@ package dev.jobradar.worker.normalizer;
 import dev.jobradar.common.db.PgJson;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Optional;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -13,6 +14,21 @@ public class JobRepository {
 
     public JobRepository(JdbcClient jdbcClient) {
         this.jdbcClient = jdbcClient;
+    }
+
+    /**
+     * 查目前 `jobs` 表上這筆職缺的 content_hash，供 normalizer 判斷內容是否真的變了
+     * （見 add-crawl-improvements design.md）。回傳空值代表這筆職缺從沒見過（真正的新職缺），
+     * 呼叫端據此決定要不要真的寫 job_snapshots／raw_documents，避免同一份內容被反覆掃到時
+     * 一直堆重複快照——`jobs` 本身的 upsert 不受這個判斷影響，仍然每次都跑，維持
+     * `last_seen_at` 更新（見 D12：closed sweep 依賴的資料不可事後補）。
+     */
+    public Optional<String> findContentHash(String source, String sourceJobId) {
+        return jdbcClient.sql("SELECT content_hash FROM jobs WHERE source = :source AND source_job_id = :sourceJobId")
+                .param("source", source)
+                .param("sourceJobId", sourceJobId)
+                .query(String.class)
+                .optional();
     }
 
     /**

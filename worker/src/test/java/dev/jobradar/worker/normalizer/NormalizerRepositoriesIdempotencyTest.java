@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Optional;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -111,6 +112,23 @@ class NormalizerRepositoriesIdempotencyTest {
                 .query(Long.class)
                 .single();
         assertThat(count).isEqualTo(1L);
+    }
+
+    @Test
+    void findContentHashReturnsEmptyForUnknownJobAndActualHashAfterUpsert() {
+        // add-crawl-improvements：normalizer 靠這個查詢判斷內容有沒有真的變，用真的
+        // Postgres 驗證，不只靠 mock——這條 SQL 寫錯欄位名稱或型別的話，mock 測試完全看不出來。
+        JobRepository jobRepository = new JobRepository(jdbcClient);
+        NormalizedJob normalized = new NormalizedJob("Backend Engineer", "Acme", 1_000_000L, 1_400_000L, "TWD", "desc");
+        String contentHash = ContentHash.of(normalized);
+
+        assertThat(jobRepository.findContentHash("test-source", "job-hash-lookup")).isEqualTo(Optional.empty());
+
+        jobRepository.upsert("test-source", "job-hash-lookup", "https://example.com/1",
+                normalized, contentHash, "{}", Instant.now());
+
+        assertThat(jobRepository.findContentHash("test-source", "job-hash-lookup"))
+                .isEqualTo(Optional.of(contentHash));
     }
 
     @Test
