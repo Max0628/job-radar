@@ -192,7 +192,14 @@ deploy:update-image-tags:
         CHANGED=$(cat /tmp/changed_files.txt);
       else
         echo "抓不到 before_sha，保守起見視為全部服務都變動過";
-        CHANGED="common/ collector/ worker/ api/ frontend/";
+        # 2026-08-02 修正：這裡原本是空白分隔、擠在同一行的字串，但下面四個
+        # 判斷式都用 grep '^...' 要求匹配整行最開頭——collector/worker/api 的
+        # 判斷式剛好都有 common/ 這個備案、而這行剛好以 common/ 開頭，純屬巧合
+        # 矇混過關，frontend 沒有這個備案，直接漏判（見 job-radar CI 排查紀錄，
+        # 這次真的踩到，frontend 的新 image 建置、推送都成功，deploy 卻沒更新
+        # manifest，手動介入補上）。改成一行一個路徑，比照真實 git diff --name-only
+        # 的輸出格式，四個判斷式不用再靠巧合。
+        CHANGED=$(printf 'common/\ncollector/\nworker/\napi/\nfrontend/\n');
       fi
     # K8S_REPO_DEPLOY_TOKEN 是 homelab/k8s 專案自己的 Project Access Token（write_repository），
     # 不是 $CI_JOB_TOKEN，所以用 oauth2 當 username，不是 gitlab-ci-token 那個保留字。
