@@ -5,7 +5,17 @@
 同時是使用者（momo 後端工程師，目標轉 SRE/Infra）的面試作品集。
 
 ## 開發流程：SDD，用 OpenSpec 框架
-
+## 禁止訪問以下url
+https://www.104.com.tw/robots.txt
+https://training.104.com.tw/robots.txt
+https://giver.104.com.tw/robots.txt
+https://pro.104.com.tw/robots.txt
+https://developers.104.com.tw/
+https://openapi.104.com.tw/
+https://accounts.104.com.tw/privacy
+https://privacy.104.com.tw/
+https://vip.104.com.tw/
+https://www.104.com.tw/info/terms.cfm
 1. **動手前先讀 `docs/architecture.md`**——所有架構決策與理由（D1–D12）都在那裡，含被否決的選項。**不要重新討論已決策事項**（語言、Kafka、兩段式爬蟲、儲存設計等）
 2. Spec 工作全部走 OpenSpec（`openspec/`，slash commands `/opsx:*`）。目前進行中的 change：`openspec/changes/add-walking-skeleton/`（proposal / design / specs / tasks 已齊，可直接 `/opsx:apply`）
 3. 新 feature 用 `/opsx:propose` 開 change；實作偏離 spec 時先更新 artifact 再改程式碼；調查結果（如平台 API 形狀）寫回該 change 的 design.md 附錄
