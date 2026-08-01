@@ -11,7 +11,7 @@
 ## 目標與非目標
 
 **目標**
-- 不用再手動刷 104 / Yourator 等平台，新職缺主動推到 Discord
+- 不用再手動刷 Yourator 等平台，新職缺主動推到 Discord
 - 職缺資料持續累積（append-only 快照），供之後查歷史、做分析
 - 完整走 homelab 的 GitLab CI → Container Registry → ArgoCD GitOps → Prometheus/Loki/Alertmanager 流程
 
@@ -25,7 +25,7 @@
 ## 系統總覽
 
 圖例：單線框 `┌─┐` = 服務/process；雙線框 `╔═╗` = Kafka topic。來源框下方標的是
-`docs/source-api-notes.md` 目前的驗證現況（104 暫緩中，不在圖上，見下方說明）。
+`docs/source-api-notes.md` 目前的驗證現況。
 
 ```
     外部求職平台（collector 主動呼叫，遵守禮貌爬蟲：同來源並發≤2、間隔≥1s、429退避）
@@ -115,11 +115,8 @@
 > **圖上「Detail Fetcher」是 per-source 決定，不是每個來源都真的打第二次 request。**
 > 實測 Yourator 的 list API 沒有 description，detail 得另外對一個一般網頁 GET、抓內嵌的
 > JSON-LD；CakeResume 的 search API 回應已經含完整職缺全文，**已確認不需要 detail 這一步**
-> （`needsDetail=false`，見 `CakeResumeListScraper`）。104 評估過（見 `docs/source-api-notes.md`），
-> 整個網域掛 Cloudflare Turnstile、無公開查詢 API，plain HTTP request 全部回 403，**暫緩、不是
-> 放棄**——現階段先以 CakeResume 作為第二來源，104 之後仍打算做，屆時要評估瀏覽器自動化繞過
-> Cloudflare 的方式與成本。細節與各來源實測結果見 `openspec/changes/add-walking-skeleton/design.md`
-> 附錄、`docs/source-api-notes.md`。
+> （`needsDetail=false`，見 `CakeResumeListScraper`）。細節與各來源實測結果見
+> `openspec/changes/add-walking-skeleton/design.md` 附錄、`docs/source-api-notes.md`。
 
 ## 決策記錄（含被否決的選項）
 
@@ -174,7 +171,7 @@ Envelope（common module 內定義，欄位不可少）：
 {
   "schemaVersion": 1,
   "type": "discovered | raw | event",
-  "source": "yourator | cakeresume | 104（暫緩）",
+  "source": "yourator | cakeresume | ...",
   "sourceJobId": "...",
   "scrapedAt": "ISO-8601",
   "url": "...",
@@ -298,7 +295,7 @@ Envelope（common module 內定義，欄位不可少）：
 | Phase | 內容 | Spec | 狀態 |
 |-------|------|------|------|
 | 001 | Walking skeleton：Yourator 單一關鍵字走通全管線到 Discord，部署進 cluster | `openspec/changes/add-walking-skeleton`（待歸檔） | **已完成並上線**，端到端驗收（push → CI → ArgoCD → Discord）已於實際 pipeline 驗證通過 |
-| 002 | 多來源 adapter；search_queries 多關鍵字 | `openspec/changes/add-multi-source-cakeresume`（待歸檔） | **已完成並上線**——CakeResume 作為第二來源已上線。104 因 Cloudflare Turnstile 全站防護、無公開查詢 API 暫緩（見 `docs/source-api-notes.md`），**不是放棄**，之後仍要做，需另外評估繞過 Cloudflare 的方式 |
+| 002 | 多來源 adapter；search_queries 多關鍵字 | `openspec/changes/add-multi-source-cakeresume`（待歸檔） | **已完成並上線**——CakeResume 作為第二來源已上線 |
 | 003 | REST API + 前端看板 | `openspec/changes/add-job-dashboard`（待歸檔） | **已完成並上線**：`api` 唯讀查詢端點、React Admin 前端（職缺瀏覽、search_queries 配置台、收藏），部署見 D13 |
 | 004 | 職缺消失偵測（closed sweep）+ CHANGED 事件細緻化 | 未寫 | 未開始 |
 | 005 | 觀測性完善：Grafana dashboard、Alertmanager 規則、分散式追蹤 | `openspec/changes/add-platform-observability`、`add-business-metrics-and-alerting`、`add-distributed-tracing`（皆待歸檔） | **三個 change 皆已完成並上線**（2026-07-28/29）。`add-platform-observability`：ServiceMonitor 雖然 001/002/003 就隨服務建了，但 Service 一直缺 `metadata.labels`，Prometheus 實際上從未採集到——修好，同時補上 kafka-exporter、postgres_exporter（含 Path A 業務指標）、Longhorn/ingress-nginx/ArgoCD/cert-manager 的 ServiceMonitor；host node-exporter 已寫好 playbook，待手動跑（需 sudo，見待決事項）。`add-business-metrics-and-alerting`：Path B 埋點（collector/worker）、SLO-1/SLO-2、7 條 job-radar 告警 + 3 條平台告警（皆有 promtool 單元測試，過程中抓到 3 條告警因 PromQL label 不匹配而恆為空的實作 bug）、AlertmanagerConfig CRD 路由、pipeline dashboard，CI 全程只觸發一次。**副產品**：過程中發現 `job-radar-discord` webhook 從未真的設定過（見上方前置作業修正）、Prometheus 自己的 Longhorn volume 有個 23 天未清的 snapshot 佔用超過邏輯容量（見 `homelab-infra/TROUBLESHOOTING.md`）。`add-distributed-tracing`：一開始因為叢集 CPU request 帳面超賣（GitLab chart 預設值過高）排不進去，把 GitLab 的 CPU request 調降 + worker1 加 vCPU 後才有 headroom，見 `homelab-infra/ARCHITECTURE.md`「GitLab CPU 調整、worker1 加 vCPU、裝 Tempo」章節；Java 端埋點與端到端驗證見下方可觀測性章節 |
@@ -307,8 +304,6 @@ Envelope（common module 內定義，欄位不可少）：
 ## 待決事項
 
 - [x] Yourator 實際 API 形狀調查——已完成，見 `docs/source-api-notes.md`
-- [x] 104 實際 API 形狀調查——已完成（Cloudflare Turnstile 全站防護，暫緩），見
-      `docs/source-api-notes.md`
 - [x] k8s repo 內版型：確認現有 root app（`argocd-root-app.yml`，`directory.recurse: true`）
       會遞迴同步純 YAML manifest，不需要 kustomize 或逐 app 建 ArgoCD Application（見 001 design.md）
 - [x] Kafka 部署方式：純 StatefulSet + KRaft（未用 Strimzi operator，對單 broker 過重），已上線運作

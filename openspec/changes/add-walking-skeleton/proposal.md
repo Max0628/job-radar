@@ -22,7 +22,7 @@ Yourator 單一關鍵字走通全管線，且是「部署在 homelab cluster、�
 
 ## Non-goals（本 change 不做）
 
-- 104 或第二個來源、深掃節奏、CHANGED/CLOSED 事件（content_hash 先算先存，事件只發 NEW）
+- 第二個來源、深掃節奏、CHANGED/CLOSED 事件（content_hash 先算先存，事件只發 NEW）
 - REST API 業務端點、前端
 - Grafana dashboard、Alertmanager 規則（metrics endpoint 要有，看板後補）
 - transactional outbox（D11：v1 接受可能漏事件）、跨平台去重、LLM extraction

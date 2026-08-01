@@ -86,7 +86,7 @@ def fetch_jobs(keyword: str, location: str | None = None) -> list[dict]:
     """先跑 discover_source() 看 output/cake_discover_summary.json 有沒有 candidate_apis。
 
     - 有找到像 API 的 endpoint：把它加進這裡，用 Fetcher.get/post 直接呼叫，
-      解析後對應到統一格式（source/job_id/title/...），可以參照 job104_poc.py 的 _map_job 寫法。
+      解析後對應到統一格式（source/job_id/title/...）。
     - 沒找到（純 DOM 渲染）：改用 DynamicFetcher.fetch(..., capture_xhr=False) 拿 rendered.css(...)
       解析職缺卡片，selector 要照 output/cake_rendered_dom_sample.html.json 的實際結構填。
     """

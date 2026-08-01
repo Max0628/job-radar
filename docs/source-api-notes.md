@@ -90,7 +90,11 @@ path 從 list API 回應的 job.path 取得，例如 /companies/aifian/jobs/4124
   不用管周圍排版的 DOM 結構、class 名稱、巢狀層級；網站改版也不影響，因為這段是給 Google
   搜尋結果讀的標準格式（SEO 用途），不是特地留給爬蟲的
 - `baseSalary` 是結構化資料（minValue/maxValue/currency/unitText）
-- 沒有 `dateModified` 欄位，只有 `datePosted`
+- 沒有 `dateModified` 欄位，只有 `datePosted`——**已於 `add-job-posted-date` 這個 change 接上**，
+  用來取代「職缺排序」原本誤用 `last_seen_at`（我們的掃描時間戳，不是平台真實日期）的問題
+- **`datePosted` 格式是非標準 ISO-8601**：`"2026-07-18 02:00:09 +0800"`（空格分隔、時區
+  offset 無冒號），Java 端解析要用自訂 `DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss Z")`，
+  不能直接 `Instant.parse`；PostgreSQL 端這個格式可以直接 cast 成 `timestamptz`，不用額外處理
 - User-Agent 需帶正常瀏覽器字串
 
 ---
@@ -142,6 +146,17 @@ Body:
 **尚未驗證**的是這是否等於完整頁面內容（還沒找一個真實職缺頁面逐欄比對），先記錄現況、
 adapter 設計時列為待確認項。
 
+**`content_updated_at` 已接上 `posted_at`**（見 `add-job-posted-date`），標準 ISO-8601 格式
+（`"2026-07-20T07:18:33.164382Z"`），可以直接 `Instant.parse`，不用像 Yourator 的 `datePosted`
+那樣特別處理格式。
+
+**真實踩過的坑：`path` 這個欄位不能單獨拿來組職缺網址。** 每筆職缺頂層的 `path` 只是職缺自己
+的 slug，正確的職缺頁網址格式是 `https://www.cake.me/companies/<公司 slug>/jobs/<職缺 path>`，
+公司 slug 要另外從巢狀的 `page.path` 欄位取（`page` 底下是公司資訊，`page.name` 是公司顯示名稱、
+`page.path` 才是網址用的 slug）。一開始只用職缺 `path` 組網址（`cake.me/jobs/<path>`），少了
+`/companies/<slug>/` 這段會連到錯誤頁面——因為當時只在乎「網址存在、格式看起來合理」，沒有拿
+真實使用者會點擊、需要跳轉到正確頁面的角度驗證過。
+
 ### 篩選維度（`available_facets`，回應裡附的清單）
 
 回應 body 的 `available_facets` 欄位列出這個 API 支援的所有篩選面向與可選值。
@@ -178,16 +193,4 @@ adapter 設計時列為待確認項。
   `it_full-stack-development`），可能比自由文字關鍵字更精準，值得後續評估是否改用分類查詢
 - 頁面本身是 Next.js CSR，`__NEXT_DATA__` 裡沒有職缺資料，必須呼叫此 API 或渲染後爬 DOM
 - 沒有遇到 Cloudflare 或其他人機驗證；plain fetch 與 API 呼叫皆正常回應
-
----
-
-## 104（暫緩，僅記錄現況）
-
-- 前端頁面觀察到的內部端點：`GET https://www.104.com.tw/jobs/search/list`
-  （`keyword`/`area`/`page`/`order`/`asc`/`mode`/`jobsource` 等參數）
-- **整個網域掛 Cloudflare Turnstile**，plain HTTP request（curl / Java HttpClient）打
-  API 端點與一般網頁都回 403 + 「Just a moment...」挑戰頁，非 JS 引擎無法通過
-- 官方開發者中心（`developers.104.com.tw`）與 `ehr.104.com.tw` 的 API 皆為 **B2B 企業端**
-  （履歷傳輸、職缺刊登服務），需簽約成為合作夥伴，服務方向是「企業推資料進 104」，
-  不是「第三方查詢職缺列表」——沒有官方公開的職缺搜尋 API
-- 現況：暫緩，不評估瀏覽器自動化繞過 Cloudflare
+  （會員登入、真的跑一個 headless browser 之類），先以 Yourator + CakeResume 兩個來源上線

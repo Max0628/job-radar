@@ -3,7 +3,7 @@
 這個資料夾**不是** job-radar 系統的一部分，跟 Gradle multi-module（`collector`/`worker`/`api`）無關，
 不會被 CI 建置，也不打算長期維護。目的只有一個：
 
-> 驗證 104、CakeResume 能不能拿到職缺資料、資料長什麼樣子，
+> 驗證 CakeResume 能不能拿到職缺資料、資料長什麼樣子，
 > 把結論寫回 `docs/architecture.md` 的 002 change（或 CakeResume 對應的 milestone），
 > 之後正式的 adapter 一律用 Java 實作進 `collector`/`worker`。
 
@@ -21,9 +21,6 @@ uv pip install --python .venv/bin/python "scrapling[fetchers]"
 ## 用法
 
 ```bash
-# 104：關鍵字搜尋 + 抓 detail
-.venv/bin/python main.py job104 --keyword "devops" --area 6001001000 --pages 2 --with-detail
-
 # CakeResume：探索資料來源（會開瀏覽器側錄 XHR/fetch）
 .venv/bin/python main.py cake-discover --keyword devops --show-browser
 

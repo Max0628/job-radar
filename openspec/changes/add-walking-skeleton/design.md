@@ -127,8 +127,8 @@ Accept: application/json
 **Yourator adapter 目前維持的策略（未變動，僅前提更正）：**
 - 維持固定掃描前 N 頁（設定值，預設 10 頁 = 每關鍵字 200 筆），N 可調
 - 冪等 upsert 本來就會處理重複——多掃到的舊職缺對 DB 只是免費更新 `last_seen_at`，成本是多打幾個 list request（一輪一關鍵字最多 10 次），量級上完全可接受（見 architecture.md 的 request 預算估算）
-- `scrape_cursors` 表在 Yourator adapter 上退化成「記錄本輪掃了幾頁、下次從第 1 頁重新開始」，不是真正的時間游標；其他來源（如 104，若有精確 `updated_at`）可以用真正的游標，這正是「per-source adapter 邏輯，不做全域規則」的體現
-- 深掃/淺掃的區別對 Yourator 因此意義不大（兩者都是固定翻 N 頁的全量式掃描），差異只在 N 的大小——這點留給 002（多來源）時再視 104 的實際行為決定是否要讓雙節奏更有意義
+- `scrape_cursors` 表在 Yourator adapter 上退化成「記錄本輪掃了幾頁、下次從第 1 頁重新開始」，不是真正的時間游標；其他來源若有精確 `updated_at`，可以用真正的游標，這正是「per-source adapter 邏輯，不做全域規則」的體現
+- 深掃/淺掃的區別對 Yourator 因此意義不大（兩者都是固定翻 N 頁的全量式掃描），差異只在 N 的大小——這點留給多來源階段時再視其他來源的實際行為決定是否要讓雙節奏更有意義
 
 ### Detail 頁
 
