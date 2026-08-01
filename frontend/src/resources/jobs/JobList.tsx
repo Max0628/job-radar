@@ -5,6 +5,7 @@ import { JobPagination } from "./JobPagination";
 const SOURCE_CHOICES = [
   { id: "yourator", name: "Yourator" },
   { id: "cakeresume", name: "CakeResume" },
+  { id: "104", name: "104" },
 ];
 
 // 職缺類型跟平台回傳的原始值一致（Yourator 是大寫底線、CakeResume 是小寫底線），

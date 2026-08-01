@@ -13,6 +13,7 @@ import { useSourceFacets } from "./useSourceFacets";
 const SOURCE_CHOICES = [
   { id: "yourator", name: "Yourator" },
   { id: "cakeresume", name: "CakeResume" },
+  { id: "104", name: "104" },
 ];
 
 // 分類跟地區的合法值依 source 而定，且都是即時從平台官方 API 拉的清單（見
@@ -43,6 +44,14 @@ const CategoryAndLocationInputs = ({ source }: { source?: string }) => {
           helperText={
             loading ? "選單載入中…" : "CakeResume：單一分類即可正確過濾"
           }
+        />
+      ) : source === "104" ? (
+        <AutocompleteArrayInput
+          source="categories"
+          label="職務分類"
+          choices={categoryChoices}
+          validate={required()}
+          helperText={loading ? "選單載入中…" : "104：單一分類即可正確過濾"}
         />
       ) : (
         <AutocompleteArrayInput

@@ -44,7 +44,7 @@ public class SearchQueryRepository {
         int limit = Math.max(0, end - start);
 
         return jdbcClient.sql("""
-                        SELECT id, source, location, categories, interval_minutes, enabled
+                        SELECT id, source, location, categories, interval_minutes, enabled, disabled_reason
                         FROM search_queries
                         ORDER BY %s %s
                         LIMIT :limit OFFSET :offset
@@ -63,7 +63,7 @@ public class SearchQueryRepository {
 
     public Optional<SearchQuery> findById(long id) {
         return jdbcClient.sql("""
-                        SELECT id, source, location, categories, interval_minutes, enabled
+                        SELECT id, source, location, categories, interval_minutes, enabled, disabled_reason
                         FROM search_queries WHERE id = :id
                         """)
                 .param("id", id)
@@ -89,12 +89,21 @@ public class SearchQueryRepository {
         return findById(id).orElseThrow();
     }
 
+    /**
+     * 重新啟用（enabled=true）時自動清掉 disabled_reason——這個欄位只有系統自動停用時
+     * 才會寫入（見 add-104-source/design.md「自動關閉」決策，目前只有 104 blocked 偵測
+     * 會寫），一旦使用者手動打開開關，代表舊的停用原因已經不成立，不需要使用者另外清除。
+     * 手動停用（enabled=false）時保留原值不動——本來就是 null（使用者自己關的，不是
+     * 系統自動關的）。
+     */
     public Optional<SearchQuery> update(long id, SearchQuery query) {
+        String disabledReason = query.enabled() ? null : query.disabledReason();
         int updated = jdbcClient.sql("""
                         UPDATE search_queries
                         SET source = :source, location = :location,
                             categories = :categories,
-                            interval_minutes = :intervalMinutes, enabled = :enabled
+                            interval_minutes = :intervalMinutes, enabled = :enabled,
+                            disabled_reason = :disabledReason
                         WHERE id = :id
                         """)
                 .param("source", query.source())
@@ -102,6 +111,7 @@ public class SearchQueryRepository {
                 .param("categories", toJsonb(query.categories()))
                 .param("intervalMinutes", query.intervalMinutes())
                 .param("enabled", query.enabled())
+                .param("disabledReason", disabledReason)
                 .param("id", id)
                 .update();
 
@@ -129,7 +139,8 @@ public class SearchQueryRepository {
                 rs.getString("location"),
                 parseCategories(rs.getString("categories")),
                 rs.getInt("interval_minutes"),
-                rs.getBoolean("enabled")
+                rs.getBoolean("enabled"),
+                rs.getString("disabled_reason")
         );
     }
 
@@ -157,6 +168,6 @@ public class SearchQueryRepository {
     }
 
     public static Set<String> registeredSources() {
-        return Set.of("yourator", "cakeresume");
+        return Set.of("yourator", "cakeresume", "104");
     }
 }

@@ -1,0 +1,40 @@
+{
+  "data": {
+    "header": {
+      "jobName": "QA Engineer",
+      "appearDate": "2026/07/31",
+      "custName": "Garena Online Private Limited台灣分公司"
+    },
+    "contact": {
+      "hrName": "HR Team",
+      "email": "hr@example.com"
+    },
+    "environmentPic": [],
+    "condition": {
+      "workExp": "3年以上",
+      "edu": "大學",
+      "language": [],
+      "specialty": [],
+      "skill": []
+    },
+    "welfare": {
+      "tag": ["員工旅遊", "彈性上下班"],
+      "welfare": "提供完整的員工福利，包含年終獎金、員工旅遊、彈性上下班等。",
+      "legalTag": ["勞保", "健保", "特別休假"]
+    },
+    "jobDetail": {
+      "jobDescription": "負責遊戲軟體品質保證，設計並執行測試計畫，撰寫自動化測試腳本，與開發團隊協作定位並追蹤缺陷。",
+      "salaryMin": 45000,
+      "salaryMax": 65000,
+      "jobType": 1,
+      "addressNo": "6001001007",
+      "addressArea": "台北市",
+      "addressRegion": "台北市內湖區",
+      "addressDetail": "瑞光路399號",
+      "needEmp": "1~2人"
+    },
+    "employees": "500人",
+    "closeDate": "",
+    "postalCode": "114"
+  }
+}

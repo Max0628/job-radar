@@ -59,3 +59,9 @@ collector:
     # 淺掃/深掃合併邏輯用（見 architecture.md D6）
     deep-scan-interval-hours: 24
     deep-scan-max-duration-minutes: 45
+    # per-source 覆寫（見 architecture.md D19/D23）：104 有 Cloudflare，翻頁間隔要比
+    # Yourator/CakeResume 的固定 1 秒更保守，改用 3–10 秒隨機區間
+    sources:
+      "104":
+        request-interval-min-millis: 3000
+        request-interval-max-millis: 10000

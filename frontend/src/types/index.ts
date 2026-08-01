@@ -2,11 +2,15 @@ import type { RaRecord } from "react-admin";
 
 // 對應後端 common.domain.SearchQuery（見 api/src/main/java/dev/jobradar/api/searchquery）
 export interface SearchQuery extends RaRecord {
-  source: "yourator" | "cakeresume";
+  source: "yourator" | "cakeresume" | "104";
   location: string | null;
   categories: string[] | null;
   intervalMinutes: number;
   enabled: boolean;
+  // 只有系統自動停用（目前僅 104 blocked 偵測會寫入，見
+  // add-104-source/design.md「自動關閉」決策）才非 null；使用者手動停用是 null，
+  // 重新啟用（enabled=true）時後端會自動清掉，前端不需要處理清除邏輯
+  disabledReason: string | null;
 }
 
 // 對應後端 api.job.JobResponse

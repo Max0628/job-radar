@@ -1,0 +1,33 @@
+{
+  "metadata": {
+    "pagination": {
+      "count": 2,
+      "currentPage": 2,
+      "lastPage": 2,
+      "total": 32
+    }
+  },
+  "data": [
+    {
+      "jobNo": "13500125",
+      "jobName": "全端工程師",
+      "custName": "另一間公司",
+      "custNo": "5d6e7f",
+      "description": "全端開發，前後端都要會...",
+      "descSnippet": "全端開發...",
+      "jobAddrNo": "6001001000",
+      "jobAddrNoDesc": "台北市",
+      "salaryLow": 55000,
+      "salaryHigh": 90000,
+      "appearDate": "20260729",
+      "link": {
+        "job": "https://www.104.com.tw/job/9m4n1"
+      },
+      "jobCat": "2007001017",
+      "employeeCount": "20人",
+      "pcSkills": "",
+      "labels": [],
+      "tags": []
+    }
+  ]
+}

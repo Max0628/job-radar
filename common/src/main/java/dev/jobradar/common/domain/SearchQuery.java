@@ -18,6 +18,11 @@ import java.util.List;
  * 務必至少帶 2 個值——單一分類值的過濾行為不可靠（部分分類單獨帶會被忽略，見
  * design.md D8 決策 1）；CakeResume 是 professions 代碼（如 "it_back-end-engineer"，
  * 來自 available_facets.professions）。
+ *
+ * disabledReason 可為 null；非 null 代表這筆是被系統自動停用的（目前只有 104 的
+ * blocked 偵測會寫入，見 add-104-source/design.md「自動關閉」決策），跟使用者手動
+ * 停用區分開——重新啟用（把 enabled 存回 true）時 api 模組會自動把這個欄位清成
+ * null，不需要使用者另外清除。
  */
 public record SearchQuery(
         long id,
@@ -25,6 +30,7 @@ public record SearchQuery(
         String location,
         List<String> categories,
         int intervalMinutes,
-        boolean enabled
+        boolean enabled,
+        String disabledReason
 ) {
 }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import dev.jobradar.common.envelope.DiscoveredEnvelope;
 import dev.jobradar.common.envelope.RawEnvelope;
 import dev.jobradar.common.kafka.Topics;
+import dev.jobradar.common.source.SourceBlockedException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -32,15 +33,18 @@ public class DetailFetcherListener {
 
     private final Map<String, DetailScraper> scrapersBySource;
     private final JobExistenceRepository jobExistenceRepository;
+    private final SearchQueryDisableRepository searchQueryDisableRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
 
     public DetailFetcherListener(
             List<DetailScraper> scrapers,
             JobExistenceRepository jobExistenceRepository,
+            SearchQueryDisableRepository searchQueryDisableRepository,
             KafkaTemplate<String, Object> kafkaTemplate
     ) {
         this.scrapersBySource = scrapers.stream().collect(Collectors.toMap(DetailScraper::source, s -> s));
         this.jobExistenceRepository = jobExistenceRepository;
+        this.searchQueryDisableRepository = searchQueryDisableRepository;
         this.kafkaTemplate = kafkaTemplate;
     }
 
@@ -66,7 +70,18 @@ public class DetailFetcherListener {
             return;
         }
 
-        JsonNode payload = scraper.fetch(envelope.sourceJobId(), envelope.detailUrl());
+        JsonNode payload;
+        try {
+            payload = scraper.fetch(envelope.sourceJobId(), envelope.detailUrl());
+        } catch (SourceBlockedException e) {
+            // 疑似被來源網站封鎖：自動停用該來源所有查詢（見
+            // add-104-source/design.md「自動關閉」決策），再往外拋讓 Kafka error handler
+            // 直接送 DLQ（見 KafkaConsumerConfig 的 addNotRetryableExceptions，不重試）
+            log.error("Detail fetch blocked source={} sourceJobId={}, disabling all queries for this source",
+                    envelope.source(), envelope.sourceJobId(), e);
+            searchQueryDisableRepository.disableAllForSource(envelope.source(), e.getMessage());
+            throw e;
+        }
         publishRaw(envelope, payload);
     }
 

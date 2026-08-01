@@ -4,6 +4,7 @@ import dev.jobradar.common.envelope.DiscoveredEnvelope;
 import dev.jobradar.common.envelope.JobEventEnvelope;
 import dev.jobradar.common.envelope.RawEnvelope;
 import dev.jobradar.common.kafka.Topics;
+import dev.jobradar.common.source.SourceBlockedException;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
@@ -68,7 +69,12 @@ public class KafkaConsumerConfig {
 
         DeadLetterPublishingRecoverer recoverer = new DeadLetterPublishingRecoverer(
                 kafkaTemplate, (record, ex) -> new org.apache.kafka.common.TopicPartition(dlqTopic, record.partition()));
-        factory.setCommonErrorHandler(new DefaultErrorHandler(recoverer, new FixedBackOff(1000L, 3L)));
+        DefaultErrorHandler errorHandler = new DefaultErrorHandler(recoverer, new FixedBackOff(1000L, 3L));
+        // 疑似被來源網站封鎖（見 add-104-source/design.md「自動關閉」決策）：重試沒有意義，
+        // 只會浪費請求、拉高被鎖 IP 的風險，直接跳過重試進 DLQ（DLQ 本來就有
+        // JobRadarDlqNotEmpty 告警，這筆訊息不會悄悄消失）
+        errorHandler.addNotRetryableExceptions(SourceBlockedException.class);
+        factory.setCommonErrorHandler(errorHandler);
 
         return factory;
     }

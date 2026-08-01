@@ -1,0 +1,21 @@
+{
+  "data": {
+    "header": {
+      "jobName": "Java工程師",
+      "appearDate": "2026/08/01",
+      "custName": "昇智科技有限公司"
+    },
+    "jobDetail": {
+      "jobDescription": "1.\t具備Java 實務開發、測試與系統維護經驗，能獨立處理系統問題。\n2.\t參與專案程式開發，並協助撰寫相關技術文件。\n3.\t負責規劃與設計軟體功能模組。\n4.\t協助研發新技術與新的系統解決方案，持續優化產品。",
+      "salary": "待遇面議",
+      "salaryMin": 0,
+      "salaryMax": 0,
+      "jobType": 1,
+      "addressNo": "6001001004",
+      "addressArea": "台北市",
+      "addressRegion": "台北市松山區",
+      "addressDetail": "光復南路1號3樓",
+      "needEmp": "1~3人"
+    }
+  }
+}

@@ -194,3 +194,171 @@ adapter 設計時列為待確認項。
 - 頁面本身是 Next.js CSR，`__NEXT_DATA__` 裡沒有職缺資料，必須呼叫此 API 或渲染後爬 DOM
 - 沒有遇到 Cloudflare 或其他人機驗證；plain fetch 與 API 呼叫皆正常回應
   （會員登入、真的跑一個 headless browser 之類），先以 Yourator + CakeResume 兩個來源上線
+
+---
+
+## 104（104 人力銀行）
+
+> POC 階段（`104-api-poc` repo）用 `curl_cffi` 實測驗證，本節只記錄結果；POC 本身不是
+> collector 的實作，正式 adapter 要另外寫。**跟 Yourator/CakeResume 不同：104 前面有
+> Cloudflare**，節流策略見 `architecture.md` D19。
+
+### List / Search API
+
+**cURL**
+
+```bash
+curl -G "https://www.104.com.tw/jobs/search/api/jobs" \
+  --data-urlencode "jobcat=2007001016,2007001017" \
+  --data-urlencode "area=6001001000" \
+  --data-urlencode "jobsource=joblist_search" \
+  --data-urlencode "mode=l" \
+  --data-urlencode "page=1" \
+  --data-urlencode "pagesize=30" \
+  -H "Accept: application/json" \
+  -b "cf_clearance=...; __cf_bm=..."
+```
+
+**JSON 版本**
+
+```
+GET https://www.104.com.tw/jobs/search/api/jobs
+
+Query params:
+  keyword: string       # 自由文字，中英文皆可。**不建議使用**：多詞塞在一起的 OR/AND
+                         # 語意未驗證（`filterQuery.kwop`/`fz` 看起來是控制比對模式的內部
+                         # 參數，但沒有實測證實），跟 Yourator/CakeResume 當初「keyword 不可靠、
+                         # 改用分類代碼」踩的坑同一類，直接用 jobcat 取代（見下方決定）
+  jobcat: string         # 逗號分隔的分類代碼（如 "2007001016,2007001017"），代碼表見下方
+                         # Area.json/JobCat.json 小節。**建議的主要篩選欄位**
+  area: string            # 地區代碼（如 "6001001000"=台北市），代碼表同上
+  jobexp: integer          # 經歷篩選，只驗證 1 組對應：3 = "1-3年"，其餘（1年以下/3-5年/
+                           # 5-10年/10年以上）代碼未知
+  scmin/scmax: integer      # 薪資下限/上限，數字直接可用，不用查代碼表
+  scneg: 0|1                 # 猜測「是否排除面議」（回應 filterQuery 裡有同名欄位可交叉核對）
+  scstrict: 0|1                # 猜測「關鍵字嚴格比對」，同上
+  sctp: string                  # 薪資計算方式，觀察到 "M"（推測=月薪）
+  order/asc: integer            # 排序欄位/方向。**未驗證**：UI 上有「符合度高／最近更新／
+                                 # 薪資待遇／應徵人數／經驗／學歷」6 個選項，只確認預設值
+                                 # order=15（符合度高），其餘（尤其「最近更新」，是 D6 時間
+                                 # 游標策略最需要的）未取得對應數值
+  fields: string                 # 稀疏欄位查詢（如 "fields=jobNo"），可大幅減少回應大小，
+                                  # 適合用在輕量掃描情境
+  page/pagesize: integer          # 1-based；pagesize 已驗證 20/30 皆可用，上限未測
+
+Headers:
+  Accept: application/json, text/plain, */*
+  Referer: https://www.104.com.tw/jobs/search/
+  User-Agent: <正常瀏覽器 UA>
+Cookies:
+  cf_clearance / __cf_bm：Cloudflare 通行憑證，見下方 Cloudflare 備註
+```
+
+**Response 結構**
+
+```
+metadata.pagination = { count, currentPage, lastPage, total }
+metadata.filterQuery = 回顯正規化後的查詢參數（可用來反推內部參數語意，見上方 kwop/fz）
+data[] = 職缺摘要陣列
+```
+
+`data[]` 單筆欄位（節錄，實測存在）：`jobNo`（數字 ID，upsert 用）、`jobName`、`custName`、
+`custNo`、`description`（**全文**，非截斷）、`descSnippet`、`jobAddrNo`/`jobAddrNoDesc`、
+`salaryLow`/`salaryHigh`（數字，無 `salaryDesc` 字串欄位）、`appearDate`（格式
+`"20260801"`，緊湊數字非 ISO-8601，**跟 detail API 的 appearDate 格式不同**）、
+`link.job`（職缺頁網址，**取路徑結尾當 detail API 的 slug，見下方**）、`jobCat`、
+`employeeCount`、`pcSkills`、`labels`、`tags` 等。
+
+**已知限制**：
+- **分頁硬上限約 3000 筆可觸及結果，不是固定「100 頁」**——`lastPage` 隨 `pagesize` 變動，
+  但 `lastPage × pagesize` 恆約等於 3000：`pagesize=30` 時 `total=6338`、`lastPage=100`
+  （100×30=3000）；`pagesize=5` 時 `total=3723`、`lastPage=600`（600×5=3000，2026-08-01
+  另一次實測驗證）。超過這個上限的部分無法用純翻頁取得，程式碼不需要額外處理——
+  `currentPage < lastPage` 這個既有判斷本來就會在平台回的 `lastPage` 那頁自然停止，
+  只是拿不到後面的資料，這是平台限制不是程式錯誤
+- **list 資料不完整，需要 detail fetch**（`needsDetail=true`，跟 CakeResume 不同、跟
+  Yourator 同一類，見下方 Detail API）
+
+### Detail API
+
+**cURL**
+
+```bash
+curl "https://www.104.com.tw/api/jobs/72f7l" \
+  -H "Accept: application/json" \
+  -b "cf_clearance=...; __cf_bm=..."
+```
+
+**JSON 版本**
+
+```
+GET https://www.104.com.tw/api/jobs/{slug}
+
+slug 從 list API 回應的 link.job 網址取得（例："https://www.104.com.tw/job/72f7l"
+的結尾 "72f7l"）。**注意：slug 不是 jobNo**，是完全不同的識別碼系統，兩者不能混用。
+```
+
+**這是乾淨 JSON API，不用像 Yourator 那樣解析 HTML 裡的 JSON-LD**——比 Yourator 的 detail
+實作成本低。
+
+Response 結構（`data` 底下，節錄）：
+- `header`：`jobName`、`appearDate`（格式 `"2026/07/31"`，斜線分隔，**跟 list API 的
+  `appearDate` 格式不同**，需要自訂 `DateTimeFormatter`，比照 Yourator 處理
+  `datePosted` 的手法）、`custName`
+- `contact`：`hrName`、`email`——**list API 完全沒有這個**
+- `environmentPic`：公司環境照片陣列——**list API 完全沒有**
+- `condition`：`workExp`（文字「3年以上」，需正則解析數字）、`edu`、`language[]`（可能是
+  空陣列）、`specialty[]`、`skill[]`
+- `welfare`：`tag[]`、`welfare`（**完整福利說明全文**）、`legalTag[]`——**list API 完全沒有**
+- `jobDetail`：`jobDescription`（全文，跟 list 的 `description` 語意對應但欄位路徑不同）、
+  `salaryMin`/`salaryMax`（數字，比 list 更乾淨）、`jobType`（數字，如 `1`，**只有一個樣本
+  點，列舉語意未知**）、`addressNo`（數字，如 `"6001001007"`，**可查 Area.json 反查乾淨的
+  縣市/區資料，不用像 Yourator 那樣正則解析自由文字地址**）、`addressArea`（如「台北市」，
+  已是常用字「台」非異體字「臺」，不用額外正規化）、`addressRegion`（如「台北市信義區」，
+  **市+區合併字串，不要直接當 district 用**，改用 `addressNo` 查表）、`addressDetail`
+  （完整街道地址）、`needEmp`（文字「1~2人」，需正則解析，注意可能是範圍格式）
+- `employees`（公司規模，文字「140人」）、`closeDate`、`postalCode`
+
+### 參考資料表（地區/職務類別代碼）
+
+```
+GET https://static.104.com.tw/category-tool/json/Area.json
+GET https://static.104.com.tw/category-tool/json/JobCat.json
+```
+
+**靜態公開檔案，無需登入、確認無 Cloudflare**（`server` header 為空，不同於
+`www.104.com.tw` 的 `cloudflare`）。階層式結構：`no`（代碼）/`des`（中文名稱）/
+`eng`（英文名稱）/`n`（子分類陣列）。JobCat.json 共 681 個節點，實測代碼對照：
+`2007001000`=軟體／工程類人員、`2007001016`=後端工程師、`2007001017`=全端工程師、
+`2007002000`=MIS／網管類人員。
+
+**變動極少（分類調整頻率約以年計），建議當靜態設定檔處理**——抓一次存下來即可，
+不用排進排程迴圈跟著每輪掃描一起打。另外還有 `Indust`/`Tool`/`Abil`/`Skill`/`Major`/
+`Metro_lines`/`AreaSch`/`AreaWork`/`Abroad`/`JobCatH.json` 等同目錄下的其他分類表，
+目前查詢邏輯（關鍵字+地區+職類）用不到，先不處理。
+
+### Cloudflare 備註
+
+- `www.104.com.tw`（list API + detail API 都在這）：有 Cloudflare（`server: cloudflare`），
+  頁面上確認載入 Cloudflare 的背景偵測腳本（`/cdn-cgi/challenge-platform/scripts/jsd/main.js`），
+  代表主動風控持續在跑，只是目前測試流量（低頻、單次）沒有被判定為高風險而出題
+- `static.104.com.tw`（代碼對照表）、`cdn.104.com.tw`（JS/CSS bundle，`server: AmazonS3`）：
+  **無 Cloudflare**，純靜態資源
+- **沒有自動解題能力**：目前架構明確不含 Playwright，`cf_clearance`/`__cf_bm` 需手動從瀏覽器
+  複製貼上，過期後需要人工重新取得——節流與失敗處理策略見 `architecture.md` D19
+- **語言選型已驗證**：`104-api-poc` 除了原本的 Python `curl_cffi` 版本，另外用純 Java 21
+  `java.net.http.HttpClient`（無任何 TLS/JA3 指紋模擬，就是最基本的內建 HTTP client）單次
+  測試 list API，同樣拿到 200 與正確 JSON——**不需要 Python，104 collector 可以直接用
+  Java 實作，跟 Yourator/CakeResume 同一套技術棧**（見 `architecture.md` D22）。附帶一個
+  觀察：Java 這次談成的是 HTTP/1.1，沒有談成 HTTP/2（真實 Chrome 走 HTTP/2/HTTP/3），這個
+  協定層級的差異目前沒有造成問題，先記錄，之後如果真的被擋可以作為排查方向之一
+
+### 待確認（不擋路，記錄現況）
+
+- `order`/`asc` 完整代碼表，尤其「最近更新」對應的數值（`architecture.md`「排程與掃描機制」
+  的早停判斷目前靠比對職缺內容是否已知，不依賴這個排序值，但如果之後能拿到「最近更新」
+  對應的數值，早停可以做得更精準）
+- 「更新時間」篩選（本日最新/三日內/一週內/二週內/一個月內）對應的實際 query 參數名稱
+- `jobType` 數字列舉的完整對照（全職/兼職/高階/派遣，猜測但未驗證）
+- `kwop`/`fz` 的精確語意（目前決定不依賴 `keyword`，此項僅供理解，不影響 adapter 設計）
+- `filterQuery.ro`/`enableJobNoTopOrder` 的精確語意（次要，不影響核心查詢邏輯）

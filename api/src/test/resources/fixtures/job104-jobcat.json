@@ -1,0 +1,27 @@
+[
+  {
+    "no": "2007001000",
+    "des": "軟體／工程類人員",
+    "eng": "Software Engineering",
+    "n": [
+      {
+        "no": "2007001016",
+        "des": "後端工程師",
+        "eng": "Backend Engineer",
+        "n": []
+      },
+      {
+        "no": "2007001017",
+        "des": "全端工程師",
+        "eng": "Full Stack Engineer",
+        "n": []
+      }
+    ]
+  },
+  {
+    "no": "2007002000",
+    "des": "MIS／網管類人員",
+    "eng": "MIS / Network Administration",
+    "n": []
+  }
+]

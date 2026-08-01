@@ -1,0 +1,54 @@
+{
+  "metadata": {
+    "pagination": {
+      "count": 2,
+      "currentPage": 2,
+      "lastPage": 2,
+      "total": 32
+    }
+  },
+  "data": [
+    {
+      "jobNo": "13500123",
+      "jobName": "QA Engineer",
+      "custName": "Garena Online Private Limited台灣分公司",
+      "custNo": "1a2b3c4",
+      "description": "負責遊戲軟體品質保證，設計並執行測試計畫...",
+      "descSnippet": "負責遊戲軟體品質保證...",
+      "jobAddrNo": "6001001007",
+      "jobAddrNoDesc": "台北市內湖區",
+      "salaryLow": 45000,
+      "salaryHigh": 65000,
+      "appearDate": "20260731",
+      "link": {
+        "job": "https://www.104.com.tw/job/72f7l"
+      },
+      "jobCat": "2007001016",
+      "employeeCount": "500人",
+      "pcSkills": "",
+      "labels": [],
+      "tags": []
+    },
+    {
+      "jobNo": "13500124",
+      "jobName": "後端工程師",
+      "custName": "測試股份有限公司",
+      "custNo": "9z8y7x",
+      "description": "負責後端服務開發與維運...",
+      "descSnippet": "負責後端服務開發...",
+      "jobAddrNo": "6001001000",
+      "jobAddrNoDesc": "台北市",
+      "salaryLow": 50000,
+      "salaryHigh": 80000,
+      "appearDate": "20260730",
+      "link": {
+        "job": "https://www.104.com.tw/job/8h3k2"
+      },
+      "jobCat": "2007001016",
+      "employeeCount": "50人",
+      "pcSkills": "",
+      "labels": [],
+      "tags": []
+    }
+  ]
+}

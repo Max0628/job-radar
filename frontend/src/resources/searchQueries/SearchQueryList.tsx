@@ -26,6 +26,9 @@ export const SearchQueryList = () => (
       </ArrayField>
       <NumberField source="intervalMinutes" label="間隔(分鐘)" />
       <BooleanField source="enabled" label="啟用中" />
+      {/* 只有系統自動停用（見 add-104-source/design.md「自動關閉」決策）才會有值，
+          使用者手動停用是 null——重新啟用時後端會自動清掉，不需要手動清除 */}
+      <TextField source="disabledReason" label="停用原因" emptyText="—" />
       <EditButton />
       <DeleteButton />
     </Datagrid>
