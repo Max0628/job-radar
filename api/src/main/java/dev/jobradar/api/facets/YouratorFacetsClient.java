@@ -1,6 +1,7 @@
 package dev.jobradar.api.facets;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import dev.jobradar.common.source.YouratorEndpoints;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -16,7 +17,6 @@ import org.springframework.web.client.RestClient;
 public class YouratorFacetsClient implements FacetsClient {
 
     private static final String SOURCE = "yourator";
-    private static final String BASE_URL = "https://www.yourator.co";
     private static final String USER_AGENT =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 job-radar/0.1";
 
@@ -33,7 +33,7 @@ public class YouratorFacetsClient implements FacetsClient {
 
     public YouratorFacetsClient(RestClient.Builder restClientBuilder) {
         this.restClient = restClientBuilder
-                .baseUrl(BASE_URL)
+                .baseUrl(YouratorEndpoints.BASE_URL)
                 .defaultHeader(HttpHeaders.USER_AGENT, USER_AGENT)
                 .defaultHeader(HttpHeaders.ACCEPT, "application/json")
                 .build();
@@ -51,7 +51,7 @@ public class YouratorFacetsClient implements FacetsClient {
 
     private List<Facet> fetchCategories() {
         JsonNode body = restClient.get()
-                .uri("/api/v4/job_categories")
+                .uri(YouratorEndpoints.JOB_CATEGORIES_PATH)
                 .retrieve()
                 .body(JsonNode.class);
 
@@ -76,7 +76,7 @@ public class YouratorFacetsClient implements FacetsClient {
     private List<Facet> fetchLocations() {
         JsonNode body = restClient.get()
                 .uri(uriBuilder -> uriBuilder
-                        .path("/api/v4/areas")
+                        .path(YouratorEndpoints.AREAS_PATH)
                         .queryParam("query_key[]", "job_areas")
                         .build())
                 .retrieve()

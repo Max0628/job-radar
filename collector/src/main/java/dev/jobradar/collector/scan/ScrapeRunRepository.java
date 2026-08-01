@@ -27,16 +27,24 @@ public class ScrapeRunRepository {
                 .single();
     }
 
-    public void finishRunSuccess(long runId, Instant finishedAt, int pagesScanned, int jobsSeen) {
+    /**
+     * scanMode/terminatedEarly 供掃描摘要回報用（見 architecture.md D21）：
+     * scanMode 是 "light"/"deep"，terminatedEarly 對應 {@code !ScanResult.reachedEnd()}。
+     */
+    public void finishRunSuccess(long runId, Instant finishedAt, int pagesScanned, int jobsSeen,
+            String scanMode, boolean terminatedEarly) {
         jdbcClient.sql("""
                         UPDATE scrape_runs
                         SET finished_at = :finishedAt, pages_scanned = :pagesScanned,
-                            jobs_seen = :jobsSeen, status = 'success'
+                            jobs_seen = :jobsSeen, status = 'success',
+                            scan_mode = :scanMode, terminated_early = :terminatedEarly
                         WHERE id = :id
                         """)
                 .param("finishedAt", Timestamp.from(finishedAt))
                 .param("pagesScanned", pagesScanned)
                 .param("jobsSeen", jobsSeen)
+                .param("scanMode", scanMode)
+                .param("terminatedEarly", terminatedEarly)
                 .param("id", runId)
                 .update();
     }

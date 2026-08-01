@@ -6,6 +6,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Optional;
 import java.util.Random;
+import java.util.concurrent.Executors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -43,14 +44,24 @@ public class ScanScheduler {
             return;
         }
 
-        for (SearchQuery query : searchQueryRepository.findAllEnabled()) {
-            try {
-                if (isDue(query)) {
-                    scanService.runScan(query);
-                }
-            } catch (Exception e) {
-                log.error("Unexpected error while checking/running scan for query id={}", query.id(), e);
+        // 三來源（未來含 104）平行執行，取代原本的循序 for 迴圈（見 architecture.md D6）。
+        // 並發限制是 per-source 的（各 ListScraper 自己節流），不同來源本來就打不同網站，
+        // 同時進行不算「疊加流量」。虛擬執行緒搭配 try-with-resources：close() 會等所有
+        // 已送出的任務跑完才返回，維持 tick() 整體同步、不會跟下一次排程觸發重疊執行。
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            for (SearchQuery query : searchQueryRepository.findAllEnabled()) {
+                executor.submit(() -> runScanIfDue(query));
             }
+        }
+    }
+
+    private void runScanIfDue(SearchQuery query) {
+        try {
+            if (isDue(query)) {
+                scanService.runScan(query);
+            }
+        } catch (Exception e) {
+            log.error("Unexpected error while checking/running scan for query id={}", query.id(), e);
         }
     }
 

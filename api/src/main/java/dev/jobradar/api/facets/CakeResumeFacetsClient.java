@@ -3,6 +3,7 @@ package dev.jobradar.api.facets;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.jobradar.common.source.CakeResumeEndpoints;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -21,7 +22,6 @@ import org.springframework.web.client.RestClient;
 public class CakeResumeFacetsClient implements FacetsClient {
 
     private static final String SOURCE = "cakeresume";
-    private static final String BASE_URL = "https://api.cake.me";
     private static final String USER_AGENT =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 job-radar/0.1";
 
@@ -48,7 +48,7 @@ public class CakeResumeFacetsClient implements FacetsClient {
     public CakeResumeFacetsClient(RestClient.Builder restClientBuilder, ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
         this.restClient = restClientBuilder
-                .baseUrl(BASE_URL)
+                .baseUrl(CakeResumeEndpoints.BASE_URL)
                 .defaultHeader(HttpHeaders.USER_AGENT, USER_AGENT)
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
@@ -71,7 +71,7 @@ public class CakeResumeFacetsClient implements FacetsClient {
         body.put("sort_by", "latest");
 
         JsonNode response = restClient.post()
-                .uri("/api/client/v1/jobs/search")
+                .uri(CakeResumeEndpoints.SEARCH_PATH)
                 .body(body)
                 .retrieve()
                 .body(JsonNode.class);

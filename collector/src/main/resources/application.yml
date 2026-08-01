@@ -52,3 +52,10 @@ collector:
     # 降低被平台判定為機器人的風險（見 ScanScheduler 的說明）
     active-hours-start: 8
     active-hours-end: 23
+    # 全域預設，取代原本逐字重複在各 ListScraper 裡的常數（見 architecture.md D23）
+    max-retry: 3
+    max-scan-duration-minutes: 15
+    retry-backoff-base-millis: 2000
+    # 淺掃/深掃合併邏輯用（見 architecture.md D6）
+    deep-scan-interval-hours: 24
+    deep-scan-max-duration-minutes: 45

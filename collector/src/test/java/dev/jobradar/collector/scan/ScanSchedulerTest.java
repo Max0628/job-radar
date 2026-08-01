@@ -13,7 +13,7 @@ class ScanSchedulerTest {
     // 另外引入 mocking 框架（見 ScanScheduler 的 package-private 註解）
     private final ScanScheduler scheduler = new ScanScheduler(
             null, null, null,
-            new CollectorScanProperties(300_000, 0, "test-agent", 0, 8, 23));
+            new CollectorScanProperties(300_000, 0, "test-agent", 0, 8, 23, 3, 15, 2000, 24, 45, java.util.Map.of()));
 
     private Instant taipeiTimeAt(int hour) {
         return ZonedDateTime.now(ZoneId.of("Asia/Taipei"))
