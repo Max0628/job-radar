@@ -1,6 +1,7 @@
 package dev.jobradar.collector.scan.cakeresume;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
@@ -15,6 +16,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpMethod;
@@ -44,11 +46,11 @@ class CakeResumeListScraperTest {
                 .andExpect(content().string(containsString("\"page\":2")))
                 .andRespond(withSuccess(fixture("cakeresume-search-page2.json"), MediaType.APPLICATION_JSON));
 
-        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
+        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder, new SimpleMeterRegistry());
-        SearchQuery query = new SearchQuery(1, "cakeresume", "Taipei", List.of(), 120, true);
+        SearchQuery query = new SearchQuery(1, "cakeresume", "Taipei", List.of(), 120, true, null);
 
-        ScanResult result = scraper.scan(query);
+        ScanResult result = scraper.scan(query, false, 1, ids -> false);
 
         assertThat(result.pagesScanned()).isEqualTo(2);
         assertThat(result.discovered()).hasSize(3);
@@ -82,12 +84,12 @@ class CakeResumeListScraperTest {
                 .andExpect(content().string(containsString("\"page\":2")))
                 .andRespond(withSuccess(fixture("cakeresume-search-page1-large-total.json"), MediaType.APPLICATION_JSON));
 
-        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
+        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "cakeresume", "Taipei", List.of(), 120, true);
+        SearchQuery query = new SearchQuery(1, "cakeresume", "Taipei", List.of(), 120, true, null);
 
-        ScanResult result = scraper.scan(query);
+        ScanResult result = scraper.scan(query, false, 1, ids -> false);
 
         // 只採計第一頁（重複的第二頁被丟棄，不重複計入），不是失敗（沒有拋例外）
         assertThat(result.pagesScanned()).isEqualTo(1);
@@ -113,12 +115,12 @@ class CakeResumeListScraperTest {
                 .andExpect(content().string(containsString("\"page\":1")))
                 .andRespond(withSuccess(fixture("cakeresume-search-single-page.json"), MediaType.APPLICATION_JSON));
 
-        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
+        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "cakeresume", "Taipei", List.of(), 120, true);
+        SearchQuery query = new SearchQuery(1, "cakeresume", "Taipei", List.of(), 120, true, null);
 
-        scraper.scan(query);
+        scraper.scan(query, false, 1, ids -> false);
 
         assertThat(meterRegistry.get("jobradar.scrape.retry")
                         .tag("source", "cakeresume")
@@ -149,17 +151,73 @@ class CakeResumeListScraperTest {
                 .andExpect(content().string(containsString("\"page\":1")))
                 .andRespond(withSuccess(fixture("cakeresume-search-single-page.json"), MediaType.APPLICATION_JSON));
 
-        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24);
+        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "cakeresume", "Taipei", List.of(), 120, true);
+        SearchQuery query = new SearchQuery(1, "cakeresume", "Taipei", List.of(), 120, true, null);
 
-        ScanResult result = scraper.scan(query);
+        ScanResult result = scraper.scan(query, false, 1, ids -> false);
 
         assertThat(result.discovered()).hasSize(2);
         assertThat(meterRegistry.get("jobradar.scrape.retry")
                         .tag("source", "cakeresume")
                         .tag("reason", "io_timeout")
+                        .counter()
+                        .count())
+                .isEqualTo(1.0);
+        server.verify();
+    }
+
+    /**
+     * 疑似風控相關（見 architecture.md D19）：403/503 不重試，只設一個 expectation，
+     * 如果誤重試會讓 MockRestServiceServer 拋出未預期請求的例外。
+     */
+    @Test
+    void forbiddenResponseIsNotRetriedAndMarksBlocked() throws Exception {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+
+        server.expect(requestTo(containsString("/api/client/v1/jobs/search")))
+                .andExpect(content().string(containsString("\"page\":1")))
+                .andRespond(MockRestResponseCreators.withStatus(HttpStatus.FORBIDDEN));
+
+        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder, meterRegistry);
+        SearchQuery query = new SearchQuery(1, "cakeresume", "Taipei", List.of(), 120, true, null);
+
+        assertThatThrownBy(() -> scraper.scan(query, false, 1, ids -> false))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(meterRegistry.get("jobradar.scrape.anomaly")
+                        .tag("source", "cakeresume")
+                        .tag("reason", "blocked")
+                        .counter()
+                        .count())
+                .isEqualTo(1.0);
+        server.verify();
+    }
+
+    @Test
+    void serviceUnavailableResponseIsNotRetriedAndMarksBlocked() throws Exception {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+
+        server.expect(requestTo(containsString("/api/client/v1/jobs/search")))
+                .andExpect(content().string(containsString("\"page\":1")))
+                .andRespond(MockRestResponseCreators.withStatus(HttpStatus.SERVICE_UNAVAILABLE));
+
+        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder, meterRegistry);
+        SearchQuery query = new SearchQuery(1, "cakeresume", "Taipei", List.of(), 120, true, null);
+
+        assertThatThrownBy(() -> scraper.scan(query, false, 1, ids -> false))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(meterRegistry.get("jobradar.scrape.anomaly")
+                        .tag("source", "cakeresume")
+                        .tag("reason", "blocked")
                         .counter()
                         .count())
                 .isEqualTo(1.0);

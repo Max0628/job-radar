@@ -8,6 +8,7 @@ import dev.jobradar.collector.scan.DiscoveredJob;
 import dev.jobradar.collector.scan.JobListScraper;
 import dev.jobradar.collector.scan.ScanResult;
 import dev.jobradar.common.domain.SearchQuery;
+import dev.jobradar.common.source.CakeResumeEndpoints;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
@@ -15,12 +16,14 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
@@ -41,9 +44,6 @@ public class CakeResumeListScraper implements JobListScraper {
 
     private static final Logger log = LoggerFactory.getLogger(CakeResumeListScraper.class);
     private static final String SOURCE = "cakeresume";
-    private static final String BASE_URL = "https://api.cake.me";
-    private static final int MAX_RETRY = 3;
-    private static final Duration MAX_SCAN_DURATION = Duration.ofMinutes(15);
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -64,7 +64,7 @@ public class CakeResumeListScraper implements JobListScraper {
         // requestFactory()，那樣會讓單元測試的 MockRestServiceServer 綁定失效
         // （已實際踩過這個坑，見 HttpClientConfig 的類別註解）。
         this.restClient = restClientBuilder
-                .baseUrl(BASE_URL)
+                .baseUrl(CakeResumeEndpoints.BASE_URL)
                 .defaultHeader(HttpHeaders.USER_AGENT, properties.userAgent())
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
@@ -78,11 +78,12 @@ public class CakeResumeListScraper implements JobListScraper {
     }
 
     @Override
-    public ScanResult scan(SearchQuery query) {
+    public ScanResult scan(SearchQuery query, boolean deepMode, int startPage, Predicate<Set<String>> pageIsFullyKnown) {
+        Duration maxScanDuration = properties.maxScanDurationFor(SOURCE, deepMode);
         List<DiscoveredJob> discovered = new ArrayList<>();
         Set<String> previousPageIds = null;
-        Instant deadline = Instant.now().plus(MAX_SCAN_DURATION);
-        int page = 1;
+        Instant deadline = Instant.now().plus(maxScanDuration);
+        int page = startPage;
         // 獨立計數「真的採用的頁數」，不要從 page 這個迴圈控制變數反推——這個變數的
         // 遞增時機只在「確定要繼續下一頁」的分支才發生，安全網 break 出去時 page 的
         // 值跟「已經真的採用幾頁」對不上，直接數採用次數才不會有 off-by-one
@@ -92,9 +93,9 @@ public class CakeResumeListScraper implements JobListScraper {
             if (Instant.now().isAfter(deadline)) {
                 log.warn("CakeResume scan exceeded {} time budget at page={} for query id={}, "
                                 + "stopping with {} jobs already discovered",
-                        MAX_SCAN_DURATION, page, query.id(), discovered.size());
+                        maxScanDuration, page, query.id(), discovered.size());
                 meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE, "reason", "timeout").increment();
-                break;
+                return new ScanResult(discovered, pagesScanned, false, page);
             }
 
             JsonNode response = searchPage(query.location(), query.categories(), page);
@@ -119,19 +120,28 @@ public class CakeResumeListScraper implements JobListScraper {
             }
 
             // 分頁 API 常見的隱性 bug：頁碼超出真實範圍後悄悄重複回傳同一批內容，
-            // total_entries 比對完全不會反映這種情況（見 class 註解），獨立檢查
+            // total_entries 比對完全不會反映這種情況（見 class 註解），獨立檢查。視為
+            // 「卡住、等同翻完」，深掃下次會重新起算（見 ScrapeCursorRepository）
             if (!currentPageIds.isEmpty() && currentPageIds.equals(previousPageIds)) {
                 log.warn("CakeResume page={} returned identical job set to previous page for query id={}, "
                                 + "stopping (pagination appears stuck)",
                         page, query.id());
                 meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE, "reason", "duplicate_page")
                         .increment();
-                break;
+                return new ScanResult(discovered, pagesScanned, true, page);
             }
 
             discovered.addAll(pageItems);
             previousPageIds = currentPageIds;
             pagesScanned++;
+
+            // 淺掃早停（見 architecture.md D6）：整頁都已經是資料庫裡的舊資料就提早停止，
+            // 不用等累積筆數真的追上 total_entries。深掃模式不做這個判斷，一定要翻到底。
+            if (!deepMode && !currentPageIds.isEmpty() && pageIsFullyKnown.test(currentPageIds)) {
+                log.debug("CakeResume page={} fully known, stopping early (light scan) for query id={}",
+                        page, query.id());
+                return new ScanResult(discovered, pagesScanned, true, page + 1);
+            }
 
             // 用累積筆數判斷是否還有下一頁，不能用單頁筆數回推（最後一頁筆數通常不足整頁，
             // 用「page * 當頁筆數」回推會誤判還有下一頁，多打一次空請求）
@@ -139,17 +149,17 @@ public class CakeResumeListScraper implements JobListScraper {
             boolean hasNextPage = discovered.size() < totalEntries;
 
             if (!hasNextPage) {
-                break;
+                return new ScanResult(discovered, pagesScanned, true, page + 1);
             }
 
             page++;
             sleep(properties.requestIntervalMillis());
         }
-
-        return new ScanResult(discovered, pagesScanned);
     }
 
     private JsonNode searchPage(String location, List<String> professions, int page) {
+        int maxRetry = properties.maxRetryFor(SOURCE);
+        long backoffBaseMillis = properties.retryBackoffBaseMillisFor(SOURCE);
         int attempt = 0;
         while (true) {
             attempt++;
@@ -181,18 +191,23 @@ public class CakeResumeListScraper implements JobListScraper {
                 body.put("sort_by", "latest");
 
                 String response = restClient.post()
-                        .uri("/api/client/v1/jobs/search")
+                        .uri(CakeResumeEndpoints.SEARCH_PATH)
                         .body(body)
                         .retrieve()
                         .body(String.class);
 
                 return objectMapper.readTree(response);
+            } catch (HttpClientErrorException.Forbidden | HttpServerErrorException.ServiceUnavailable e) {
+                // 疑似風控相關（見 architecture.md D19）：不重試，直接失敗——對這類錯誤
+                // 重試只會浪費請求、拉高被判定高風險的機率，跟 429/逾時的處理原則不同
+                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE, "reason", "blocked").increment();
+                throw new IllegalStateException("CakeResume returned " + e.getStatusCode() + " for page " + page, e);
             } catch (HttpClientErrorException.TooManyRequests e) {
                 meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE, "reason", "rate_limited").increment();
-                if (attempt >= MAX_RETRY) {
-                    throw new IllegalStateException("CakeResume rate limited after " + MAX_RETRY + " retries", e);
+                if (attempt >= maxRetry) {
+                    throw new IllegalStateException("CakeResume rate limited after " + maxRetry + " retries", e);
                 }
-                long backoffMillis = 2000L * attempt;
+                long backoffMillis = backoffBaseMillis * attempt;
                 log.warn("CakeResume returned 429 for page={}, retry {} after {}ms", page, attempt, backoffMillis);
                 sleep(backoffMillis);
             } catch (ResourceAccessException e) {
@@ -200,11 +215,11 @@ public class CakeResumeListScraper implements JobListScraper {
                 // 之後一輪掃描要打的請求數變多，偶發逾時的機率也跟著變高（見建構子註解），
                 // 沒有這個重試的話，任何一次偶發逾時就會讓整輪掃描全部作廢
                 meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE, "reason", "io_timeout").increment();
-                if (attempt >= MAX_RETRY) {
+                if (attempt >= maxRetry) {
                     throw new IllegalStateException(
-                            "CakeResume request failed after " + MAX_RETRY + " retries (page " + page + ")", e);
+                            "CakeResume request failed after " + maxRetry + " retries (page " + page + ")", e);
                 }
-                long backoffMillis = 2000L * attempt;
+                long backoffMillis = backoffBaseMillis * attempt;
                 log.warn("CakeResume I/O error for page={}, retry {} after {}ms: {}",
                         page, attempt, backoffMillis, e.getMessage());
                 sleep(backoffMillis);
