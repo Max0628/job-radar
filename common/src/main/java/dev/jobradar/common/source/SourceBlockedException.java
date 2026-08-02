@@ -8,14 +8,14 @@ package dev.jobradar.common.source;
  */
 public class SourceBlockedException extends RuntimeException {
 
-    private final String source;
+    private final Source source;
 
-    public SourceBlockedException(String source, String message, Throwable cause) {
+    public SourceBlockedException(Source source, String message, Throwable cause) {
         super(message, cause);
         this.source = source;
     }
 
-    public String source() {
+    public Source source() {
         return source;
     }
 }

@@ -1,6 +1,13 @@
 package dev.jobradar.common.domain;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import dev.jobradar.common.source.Source;
 import java.util.List;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Value;
+import lombok.experimental.Accessors;
+import lombok.extern.jackson.Jacksonized;
 
 /**
  * search_queries 表的一列設定：某來源要用哪些分類掃描、多久掃一次。
@@ -23,14 +30,35 @@ import java.util.List;
  * blocked 偵測會寫入，見 add-104-source/design.md「自動關閉」決策），跟使用者手動
  * 停用區分開——重新啟用（把 enabled 存回 true）時 api 模組會自動把這個欄位清成
  * null，不需要使用者另外清除。
+ *
+ * {@code @Jacksonized}：這個類別會被 Jackson 反序列化（`SearchQueryController` 的
+ * `@RequestBody SearchQuery`），Lombok `@Value` 單獨使用時沒有無參數建構子，Jackson
+ * 預設不知道怎麼從 JSON 建構物件，`@Builder @Jacksonized` 讓 Lombok 生成 Jackson
+ * 認得的 builder 解決這個問題。
+ *
+ * {@code @AllArgsConstructor}：`@Value` + `@Builder` 組合預設會把全參數建構子降成
+ * package-private（只留 builder 當唯一建構方式），但既有程式碼多處直接用
+ * `new SearchQuery(...)`（見 collector/api 兩份 `SearchQueryRepository` 的 RowMapper），
+ * 明確加這個註解保留 public 建構子，維持呼叫端相容、不用全部改成 builder 寫法。
+ *
+ * {@code @JsonAutoDetect(fieldVisibility = ANY)}：`@Accessors(fluent = true)` 讓存取
+ * 方法變成無前綴（`source()` 而非 `getSource()`），Jackson 預設的 bean 內省只認得
+ * `getXxx()`/`isXxx()` 命名，看不到 fluent 存取方法，序列化會生出空物件 `{}`——加這個
+ * 註解讓 Jackson 直接讀 private field，繞過命名規則問題。實測過沒加這行時
+ * `GET /api/search-queries` 真的回傳 `[{},{},{}]`。
  */
-public record SearchQuery(
-        long id,
-        String source,
-        String location,
-        List<String> categories,
-        int intervalMinutes,
-        boolean enabled,
-        String disabledReason
-) {
+@Value
+@Builder
+@Jacksonized
+@AllArgsConstructor
+@Accessors(fluent = true)
+@JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+public class SearchQuery {
+    long id;
+    Source source;
+    String location;
+    List<String> categories;
+    int intervalMinutes;
+    boolean enabled;
+    String disabledReason;
 }
