@@ -1,5 +1,6 @@
 package dev.jobradar.worker.fetcher;
 
+import dev.jobradar.common.source.Source;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -16,13 +17,13 @@ public class SearchQueryDisableRepository {
 
     private final JdbcClient jdbcClient;
 
-    public void disableAllForSource(String source, String reason) {
+    public void disableAllForSource(Source source, String reason) {
         jdbcClient.sql("""
                         UPDATE search_queries
                         SET enabled = FALSE, disabled_reason = :reason
                         WHERE source = :source
                         """)
-                .param("source", source)
+                .param("source", source.value())
                 .param("reason", reason)
                 .update();
     }

@@ -4,11 +4,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import dev.jobradar.common.envelope.DiscoveredEnvelope;
 import dev.jobradar.common.envelope.RawEnvelope;
 import dev.jobradar.common.kafka.Topics;
+import dev.jobradar.common.repository.JobExistenceRepository;
+import dev.jobradar.common.source.Source;
 import dev.jobradar.common.source.SourceBlockedException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -31,7 +32,7 @@ public class DetailFetcherListener {
 
     private static final Logger log = LoggerFactory.getLogger(DetailFetcherListener.class);
 
-    private final Map<String, DetailScraper> scrapersBySource;
+    private final Map<Source, DetailScraper> scrapersBySource;
     private final JobExistenceRepository jobExistenceRepository;
     private final SearchQueryDisableRepository searchQueryDisableRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
@@ -42,7 +43,7 @@ public class DetailFetcherListener {
             SearchQueryDisableRepository searchQueryDisableRepository,
             KafkaTemplate<String, Object> kafkaTemplate
     ) {
-        this.scrapersBySource = scrapers.stream().collect(Collectors.toMap(DetailScraper::source, s -> s));
+        this.scrapersBySource = Source.indexBy(scrapers, DetailScraper::source);
         this.jobExistenceRepository = jobExistenceRepository;
         this.searchQueryDisableRepository = searchQueryDisableRepository;
         this.kafkaTemplate = kafkaTemplate;

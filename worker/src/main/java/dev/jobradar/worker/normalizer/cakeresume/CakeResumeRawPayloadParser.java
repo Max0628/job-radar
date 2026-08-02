@@ -2,6 +2,7 @@ package dev.jobradar.worker.normalizer.cakeresume;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.jobradar.worker.normalizer.NormalizedJob;
+import dev.jobradar.common.source.Source;
 import dev.jobradar.worker.normalizer.RawPayloadParser;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -20,10 +21,10 @@ import org.springframework.stereotype.Component;
 public class CakeResumeRawPayloadParser implements RawPayloadParser {
 
     private static final Logger log = LoggerFactory.getLogger(CakeResumeRawPayloadParser.class);
-    private static final String SOURCE = "cakeresume";
+    private static final Source SOURCE = Source.CAKERESUME;
 
     @Override
-    public String source() {
+    public Source source() {
         return SOURCE;
     }
 

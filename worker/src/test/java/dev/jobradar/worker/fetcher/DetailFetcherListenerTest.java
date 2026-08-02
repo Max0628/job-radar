@@ -9,6 +9,8 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.jobradar.common.envelope.DiscoveredEnvelope;
+import dev.jobradar.common.repository.JobExistenceRepository;
+import dev.jobradar.common.source.Source;
 import dev.jobradar.common.source.SourceBlockedException;
 import java.time.Instant;
 import java.util.List;
@@ -29,17 +31,17 @@ class DetailFetcherListenerTest {
 
     @Test
     void blockedDetailFetchDisablesSourceAndRethrows() {
-        when(jobExistenceRepository.exists("104", "123")).thenReturn(false);
+        when(jobExistenceRepository.exists(Source.JOB104, "123")).thenReturn(false);
 
         DetailScraper scraper = new DetailScraper() {
             @Override
-            public String source() {
-                return "104";
+            public Source source() {
+                return Source.JOB104;
             }
 
             @Override
             public JsonNode fetch(String sourceJobId, String url) {
-                throw new SourceBlockedException("104", "104 detail returned 403", null);
+                throw new SourceBlockedException(Source.JOB104, "104 detail returned 403", null);
             }
         };
 
@@ -48,11 +50,11 @@ class DetailFetcherListenerTest {
 
         JsonNode payload = new ObjectMapper().createObjectNode();
         DiscoveredEnvelope envelope = new DiscoveredEnvelope(
-                "104", "123", Instant.now(), "https://www.104.com.tw/job/abc12", true, "abc12", payload);
+                Source.JOB104, "123", Instant.now(), "https://www.104.com.tw/job/abc12", true, "abc12", payload);
 
         assertThatThrownBy(() -> listener.onDiscovered(envelope))
                 .isInstanceOf(SourceBlockedException.class);
 
-        verify(searchQueryDisableRepository).disableAllForSource(org.mockito.ArgumentMatchers.eq("104"), anyString());
+        verify(searchQueryDisableRepository).disableAllForSource(org.mockito.ArgumentMatchers.eq(Source.JOB104), anyString());
     }
 }

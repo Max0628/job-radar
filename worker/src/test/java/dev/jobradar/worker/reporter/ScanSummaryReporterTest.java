@@ -14,6 +14,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import dev.jobradar.common.domain.ScanMode;
 import dev.jobradar.worker.notifier.DiscordProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
@@ -38,7 +39,7 @@ class ScanSummaryReporterTest {
         Instant startedAt = Instant.now().minus(Duration.ofMinutes(15));
         Instant finishedAt = Instant.now().minus(Duration.ofMinutes(11));
         UnreportedScrapeRun run = new UnreportedScrapeRun(
-                1L, "yourator", "light", false, startedAt, finishedAt, 2, 40);
+                1L, "yourator", ScanMode.LIGHT, false, startedAt, finishedAt, 2, 40);
         when(repository.findUnreportedFinishedRuns(any(Instant.class))).thenReturn(List.of(run));
         when(repository.countNewJobs(eq("yourator"), any(Instant.class), any(Instant.class))).thenReturn(3);
 
@@ -95,9 +96,9 @@ class ScanSummaryReporterTest {
         Instant startedAt = Instant.now().minus(Duration.ofMinutes(15));
         Instant finishedAt = Instant.now().minus(Duration.ofMinutes(11));
         UnreportedScrapeRun failingRun = new UnreportedScrapeRun(
-                1L, "yourator", "light", false, startedAt, finishedAt, 1, 10);
+                1L, "yourator", ScanMode.LIGHT, false, startedAt, finishedAt, 1, 10);
         UnreportedScrapeRun succeedingRun = new UnreportedScrapeRun(
-                2L, "cakeresume", "deep", true, startedAt, finishedAt, 5, 90);
+                2L, "cakeresume", ScanMode.DEEP, true, startedAt, finishedAt, 5, 90);
         when(repository.findUnreportedFinishedRuns(any(Instant.class)))
                 .thenReturn(List.of(failingRun, succeedingRun));
         when(repository.countNewJobs(anyString(), any(Instant.class), any(Instant.class))).thenReturn(1);

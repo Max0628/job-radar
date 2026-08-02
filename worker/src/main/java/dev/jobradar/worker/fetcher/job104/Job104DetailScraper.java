@@ -3,6 +3,7 @@ package dev.jobradar.worker.fetcher.job104;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.jobradar.common.source.Job104Endpoints;
+import dev.jobradar.common.source.Source;
 import dev.jobradar.common.source.SourceBlockedException;
 import dev.jobradar.worker.fetcher.DetailScraper;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -39,7 +40,7 @@ import org.springframework.web.client.RestClient;
 public class Job104DetailScraper implements DetailScraper {
 
     private static final Logger log = LoggerFactory.getLogger(Job104DetailScraper.class);
-    private static final String SOURCE = "104";
+    private static final Source SOURCE = Source.JOB104;
     private static final int MAX_RETRY = 3;
     private static final long BACKOFF_BASE_MILLIS = 2000L;
     private static final Duration MIN_INTERVAL = Duration.ofSeconds(1);
@@ -63,7 +64,7 @@ public class Job104DetailScraper implements DetailScraper {
     }
 
     @Override
-    public String source() {
+    public Source source() {
         return SOURCE;
     }
 
@@ -83,10 +84,10 @@ public class Job104DetailScraper implements DetailScraper {
                 // 疑似 Cloudflare 風控相關（見 architecture.md D19）：不重試，直接失敗。拋
                 // 專用例外讓 DetailFetcherListener 能專門對這個情況觸發自動停用（見
                 // add-104-source/design.md「自動關閉」決策）
-                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE, "reason", "blocked").increment();
+                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE.value(), "reason", "blocked").increment();
                 throw new SourceBlockedException(SOURCE, "104 detail returned " + e.getStatusCode() + " for " + sourceJobId, e);
             } catch (HttpClientErrorException.TooManyRequests e) {
-                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE, "reason", "rate_limited").increment();
+                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE.value(), "reason", "rate_limited").increment();
                 if (attempt >= MAX_RETRY) {
                     throw new IllegalStateException("104 detail rate limited after " + MAX_RETRY + " retries for " + sourceJobId, e);
                 }
@@ -94,7 +95,7 @@ public class Job104DetailScraper implements DetailScraper {
                 log.warn("104 detail returned 429 for {}, retry {} after {}ms", sourceJobId, attempt, backoffMillis);
                 sleep(backoffMillis);
             } catch (ResourceAccessException e) {
-                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE, "reason", "io_timeout").increment();
+                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE.value(), "reason", "io_timeout").increment();
                 if (attempt >= MAX_RETRY) {
                     throw new IllegalStateException(
                             "104 detail request failed after " + MAX_RETRY + " retries for " + sourceJobId, e);

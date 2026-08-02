@@ -3,6 +3,7 @@ package dev.jobradar.worker.normalizer;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.zaxxer.hikari.HikariDataSource;
+import dev.jobradar.common.source.Source;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Optional;
@@ -57,19 +58,19 @@ class NormalizerRepositoriesIdempotencyTest {
 
     @Test
     void upsertingSameJobTwiceOnlyInsertsOnce() {
-        JobRepository jobRepository = new JobRepository(jdbcClient);
+        JobUpsertRepository jobRepository = new JobUpsertRepository(jdbcClient);
         NormalizedJob normalized = new NormalizedJob("Backend Engineer", "Acme", 1_000_000L, 1_400_000L, "TWD", "desc");
         Instant seenAt = Instant.now();
 
-        boolean firstInserted = jobRepository.upsert("test-source", "job-1", "https://example.com/1",
+        boolean firstInserted = jobRepository.upsert(Source.YOURATOR, "job-1", "https://example.com/1",
                 normalized, ContentHash.of(normalized), "{}", seenAt);
-        boolean secondInserted = jobRepository.upsert("test-source", "job-1", "https://example.com/1",
+        boolean secondInserted = jobRepository.upsert(Source.YOURATOR, "job-1", "https://example.com/1",
                 normalized, ContentHash.of(normalized), "{}", seenAt.plusSeconds(10));
 
         assertThat(firstInserted).isTrue();
         assertThat(secondInserted).isFalse();
 
-        Long count = jdbcClient.sql("SELECT count(*) FROM jobs WHERE source = 'test-source' AND source_job_id = 'job-1'")
+        Long count = jdbcClient.sql("SELECT count(*) FROM jobs WHERE source = 'yourator' AND source_job_id = 'job-1'")
                 .query(Long.class)
                 .single();
         assertThat(count).isEqualTo(1L);
@@ -80,16 +81,16 @@ class NormalizerRepositoriesIdempotencyTest {
         // 真實踩過的 bug：ON CONFLICT DO UPDATE 一度漏了 url 這個欄位，導致職缺重新被掃到
         // 時，就算來源平台算出的網址不一樣了（例如格式修正後），資料庫還是卡在第一次看到
         // 時存的舊網址，永遠不會更新（見 add-job-posted-date 之後發現的這個獨立問題）
-        JobRepository jobRepository = new JobRepository(jdbcClient);
+        JobUpsertRepository jobRepository = new JobUpsertRepository(jdbcClient);
         NormalizedJob normalized = new NormalizedJob("Backend Engineer", "Acme", 1_000_000L, 1_400_000L, "TWD", "desc");
         Instant seenAt = Instant.now();
 
-        jobRepository.upsert("test-source", "job-url-update", "https://example.com/old-wrong-url",
+        jobRepository.upsert(Source.YOURATOR, "job-url-update", "https://example.com/old-wrong-url",
                 normalized, ContentHash.of(normalized), "{}", seenAt);
-        jobRepository.upsert("test-source", "job-url-update", "https://example.com/new-correct-url",
+        jobRepository.upsert(Source.YOURATOR, "job-url-update", "https://example.com/new-correct-url",
                 normalized, ContentHash.of(normalized), "{}", seenAt.plusSeconds(10));
 
-        String url = jdbcClient.sql("SELECT url FROM jobs WHERE source = 'test-source' AND source_job_id = 'job-url-update'")
+        String url = jdbcClient.sql("SELECT url FROM jobs WHERE source = 'yourator' AND source_job_id = 'job-url-update'")
                 .query(String.class)
                 .single();
         assertThat(url).isEqualTo("https://example.com/new-correct-url");
@@ -101,12 +102,12 @@ class NormalizerRepositoriesIdempotencyTest {
         NormalizedJob normalized = new NormalizedJob("Title", "Company", 100L, 200L, "TWD", "desc");
         Instant scrapedAt = Instant.now();
 
-        snapshotRepository.insertIgnore("test-source", "job-snapshot-1", scrapedAt, normalized, ContentHash.of(normalized));
-        snapshotRepository.insertIgnore("test-source", "job-snapshot-1", scrapedAt, normalized, ContentHash.of(normalized));
+        snapshotRepository.insertIgnore(Source.YOURATOR, "job-snapshot-1", scrapedAt, normalized, ContentHash.of(normalized));
+        snapshotRepository.insertIgnore(Source.YOURATOR, "job-snapshot-1", scrapedAt, normalized, ContentHash.of(normalized));
 
         Long count = jdbcClient.sql("""
                         SELECT count(*) FROM job_snapshots
-                        WHERE source = 'test-source' AND source_job_id = 'job-snapshot-1' AND scraped_at = :scrapedAt
+                        WHERE source = 'yourator' AND source_job_id = 'job-snapshot-1' AND scraped_at = :scrapedAt
                         """)
                 .param("scrapedAt", Timestamp.from(scrapedAt))
                 .query(Long.class)
@@ -118,16 +119,16 @@ class NormalizerRepositoriesIdempotencyTest {
     void findContentHashReturnsEmptyForUnknownJobAndActualHashAfterUpsert() {
         // add-crawl-improvements：normalizer 靠這個查詢判斷內容有沒有真的變，用真的
         // Postgres 驗證，不只靠 mock——這條 SQL 寫錯欄位名稱或型別的話，mock 測試完全看不出來。
-        JobRepository jobRepository = new JobRepository(jdbcClient);
+        JobUpsertRepository jobRepository = new JobUpsertRepository(jdbcClient);
         NormalizedJob normalized = new NormalizedJob("Backend Engineer", "Acme", 1_000_000L, 1_400_000L, "TWD", "desc");
         String contentHash = ContentHash.of(normalized);
 
-        assertThat(jobRepository.findContentHash("test-source", "job-hash-lookup")).isEqualTo(Optional.empty());
+        assertThat(jobRepository.findContentHash(Source.YOURATOR, "job-hash-lookup")).isEqualTo(Optional.empty());
 
-        jobRepository.upsert("test-source", "job-hash-lookup", "https://example.com/1",
+        jobRepository.upsert(Source.YOURATOR, "job-hash-lookup", "https://example.com/1",
                 normalized, contentHash, "{}", Instant.now());
 
-        assertThat(jobRepository.findContentHash("test-source", "job-hash-lookup"))
+        assertThat(jobRepository.findContentHash(Source.YOURATOR, "job-hash-lookup"))
                 .isEqualTo(Optional.of(contentHash));
     }
 
@@ -136,12 +137,12 @@ class NormalizerRepositoriesIdempotencyTest {
         RawDocumentRepository rawDocumentRepository = new RawDocumentRepository(jdbcClient);
         Instant fetchedAt = Instant.now();
 
-        rawDocumentRepository.insertIgnore("test-source", "job-raw-1", fetchedAt, "{\"a\":1}");
-        rawDocumentRepository.insertIgnore("test-source", "job-raw-1", fetchedAt, "{\"a\":1}");
+        rawDocumentRepository.insertIgnore(Source.YOURATOR, "job-raw-1", fetchedAt, "{\"a\":1}");
+        rawDocumentRepository.insertIgnore(Source.YOURATOR, "job-raw-1", fetchedAt, "{\"a\":1}");
 
         Long count = jdbcClient.sql("""
                         SELECT count(*) FROM raw_documents
-                        WHERE source = 'test-source' AND source_job_id = 'job-raw-1' AND fetched_at = :fetchedAt
+                        WHERE source = 'yourator' AND source_job_id = 'job-raw-1' AND fetched_at = :fetchedAt
                         """)
                 .param("fetchedAt", Timestamp.from(fetchedAt))
                 .query(Long.class)

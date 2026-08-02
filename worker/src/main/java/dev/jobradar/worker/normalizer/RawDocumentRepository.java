@@ -1,6 +1,7 @@
 package dev.jobradar.worker.normalizer;
 
 import dev.jobradar.common.db.PgJson;
+import dev.jobradar.common.source.Source;
 import java.sql.Timestamp;
 import java.time.Instant;
 import lombok.RequiredArgsConstructor;
@@ -13,13 +14,13 @@ public class RawDocumentRepository {
 
     private final JdbcClient jdbcClient;
 
-    public void insertIgnore(String source, String sourceJobId, Instant fetchedAt, String payloadJson) {
+    public void insertIgnore(Source source, String sourceJobId, Instant fetchedAt, String payloadJson) {
         jdbcClient.sql("""
                         INSERT INTO raw_documents (source, source_job_id, fetched_at, payload)
                         VALUES (:source, :sourceJobId, :fetchedAt, :payload)
                         ON CONFLICT (source, source_job_id, fetched_at) DO NOTHING
                         """)
-                .param("source", source)
+                .param("source", source.value())
                 .param("sourceJobId", sourceJobId)
                 .param("fetchedAt", Timestamp.from(fetchedAt))
                 .param("payload", PgJson.jsonb(payloadJson))

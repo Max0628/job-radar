@@ -2,6 +2,7 @@ package dev.jobradar.worker.normalizer.job104;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.jobradar.worker.normalizer.NormalizedJob;
+import dev.jobradar.common.source.Source;
 import dev.jobradar.worker.normalizer.RawPayloadParser;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -19,7 +20,7 @@ import org.springframework.stereotype.Component;
 public class Job104RawPayloadParser implements RawPayloadParser {
 
     private static final Logger log = LoggerFactory.getLogger(Job104RawPayloadParser.class);
-    private static final String SOURCE = "104";
+    private static final Source SOURCE = Source.JOB104;
 
     // header.appearDate 格式如 "2026/07/31"：斜線分隔，跟 list API 的 appearDate
     // （緊湊數字 "20260731"）格式不同，需要自訂 pattern（見 design.md，比照 Yourator
@@ -27,7 +28,7 @@ public class Job104RawPayloadParser implements RawPayloadParser {
     private static final DateTimeFormatter APPEAR_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd");
 
     @Override
-    public String source() {
+    public Source source() {
         return SOURCE;
     }
 

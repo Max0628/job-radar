@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.jobradar.common.envelope.RawEnvelope;
+import dev.jobradar.common.source.Source;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.util.Optional;
@@ -27,7 +28,7 @@ import org.springframework.kafka.core.KafkaTemplate;
  */
 class NormalizerListenerTest {
 
-    private final JobRepository jobRepository = mock(JobRepository.class);
+    private final JobUpsertRepository jobRepository = mock(JobUpsertRepository.class);
     private final JobSnapshotRepository snapshotRepository = mock(JobSnapshotRepository.class);
     private final RawDocumentRepository rawDocumentRepository = mock(RawDocumentRepository.class);
     @SuppressWarnings("unchecked")
@@ -39,8 +40,8 @@ class NormalizerListenerTest {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         RawPayloadParser parser = new RawPayloadParser() {
             @Override
-            public String source() {
-                return "yourator";
+            public Source source() {
+                return Source.YOURATOR;
             }
 
             @Override
@@ -48,12 +49,12 @@ class NormalizerListenerTest {
                 return new NormalizedJob("Title", "Company", null, null, null, null);
             }
         };
-        when(jobRepository.upsert(anyString(), anyString(), anyString(), any(), anyString(), anyString(), any(Instant.class)))
+        when(jobRepository.upsert(any(Source.class), anyString(), anyString(), any(), anyString(), anyString(), any(Instant.class)))
                 .thenReturn(true);
 
         NormalizerListener listener = new NormalizerListener(
                 java.util.List.of(parser), jobRepository, snapshotRepository, rawDocumentRepository, kafkaTemplate, meterRegistry);
-        RawEnvelope envelope = new RawEnvelope("yourator", "123", Instant.now(), "http://example.com/123", payload);
+        RawEnvelope envelope = new RawEnvelope(Source.YOURATOR, "123", Instant.now(), "http://example.com/123", payload);
 
         listener.onRaw(envelope);
 
@@ -76,8 +77,8 @@ class NormalizerListenerTest {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         RawPayloadParser parser = new RawPayloadParser() {
             @Override
-            public String source() {
-                return "yourator";
+            public Source source() {
+                return Source.YOURATOR;
             }
 
             @Override
@@ -85,12 +86,12 @@ class NormalizerListenerTest {
                 return new NormalizedJob("Title", "Company", null, null, null, null);
             }
         };
-        when(jobRepository.upsert(anyString(), anyString(), anyString(), any(), anyString(), anyString(), any(Instant.class)))
+        when(jobRepository.upsert(any(Source.class), anyString(), anyString(), any(), anyString(), anyString(), any(Instant.class)))
                 .thenReturn(false);
 
         NormalizerListener listener = new NormalizerListener(
                 java.util.List.of(parser), jobRepository, snapshotRepository, rawDocumentRepository, kafkaTemplate, meterRegistry);
-        RawEnvelope envelope = new RawEnvelope("yourator", "123", Instant.now(), "http://example.com/123", payload);
+        RawEnvelope envelope = new RawEnvelope(Source.YOURATOR, "123", Instant.now(), "http://example.com/123", payload);
 
         listener.onRaw(envelope);
 
@@ -106,8 +107,8 @@ class NormalizerListenerTest {
         RuntimeException boom = new RuntimeException("unexpected parser bug");
         RawPayloadParser parser = new RawPayloadParser() {
             @Override
-            public String source() {
-                return "yourator";
+            public Source source() {
+                return Source.YOURATOR;
             }
 
             @Override
@@ -118,7 +119,7 @@ class NormalizerListenerTest {
 
         NormalizerListener listener = new NormalizerListener(
                 java.util.List.of(parser), jobRepository, snapshotRepository, rawDocumentRepository, kafkaTemplate, meterRegistry);
-        RawEnvelope envelope = new RawEnvelope("yourator", "123", Instant.now(), "http://example.com/123", payload);
+        RawEnvelope envelope = new RawEnvelope(Source.YOURATOR, "123", Instant.now(), "http://example.com/123", payload);
 
         // 例外必須向上傳播，不能被計數邏輯吞掉——否則訊息會被視為處理成功並 commit
         // offset，違反 D5 的 at-least-once 保證，且從外部完全觀察不出異常。
@@ -145,8 +146,8 @@ class NormalizerListenerTest {
         NormalizedJob normalized = new NormalizedJob("Title", "Company", null, null, null, null);
         RawPayloadParser parser = new RawPayloadParser() {
             @Override
-            public String source() {
-                return "yourator";
+            public Source source() {
+                return Source.YOURATOR;
             }
 
             @Override
@@ -155,22 +156,22 @@ class NormalizerListenerTest {
             }
         };
         String contentHash = ContentHash.of(normalized);
-        when(jobRepository.findContentHash("yourator", "123")).thenReturn(Optional.of(contentHash));
-        when(jobRepository.upsert(anyString(), anyString(), anyString(), any(), anyString(), anyString(), any(Instant.class)))
+        when(jobRepository.findContentHash(Source.YOURATOR, "123")).thenReturn(Optional.of(contentHash));
+        when(jobRepository.upsert(any(Source.class), anyString(), anyString(), any(), anyString(), anyString(), any(Instant.class)))
                 .thenReturn(false);
 
         NormalizerListener listener = new NormalizerListener(
                 java.util.List.of(parser), jobRepository, snapshotRepository, rawDocumentRepository, kafkaTemplate, meterRegistry);
-        RawEnvelope envelope = new RawEnvelope("yourator", "123", Instant.now(), "http://example.com/123", payload);
+        RawEnvelope envelope = new RawEnvelope(Source.YOURATOR, "123", Instant.now(), "http://example.com/123", payload);
 
         listener.onRaw(envelope);
 
-        verify(rawDocumentRepository, never()).insertIgnore(anyString(), anyString(), any(Instant.class), anyString());
+        verify(rawDocumentRepository, never()).insertIgnore(any(Source.class), anyString(), any(Instant.class), anyString());
         verify(snapshotRepository, never())
-                .insertIgnore(anyString(), anyString(), any(Instant.class), any(), anyString());
+                .insertIgnore(any(Source.class), anyString(), any(Instant.class), any(), anyString());
         // jobs 本身的 upsert 不受影響，仍然要跑（維持 last_seen_at 更新，見 D12）
         verify(jobRepository, times(1))
-                .upsert(anyString(), anyString(), anyString(), any(), anyString(), anyString(), any(Instant.class));
+                .upsert(any(Source.class), anyString(), anyString(), any(), anyString(), anyString(), any(Instant.class));
         assertThat(meterRegistry.get("jobradar.snapshot.write")
                         .tag("source", "yourator")
                         .tag("result", "skipped")
@@ -189,8 +190,8 @@ class NormalizerListenerTest {
         NormalizedJob normalized = new NormalizedJob("New Title", "Company", null, null, null, null);
         RawPayloadParser parser = new RawPayloadParser() {
             @Override
-            public String source() {
-                return "yourator";
+            public Source source() {
+                return Source.YOURATOR;
             }
 
             @Override
@@ -198,19 +199,19 @@ class NormalizerListenerTest {
                 return normalized;
             }
         };
-        when(jobRepository.findContentHash("yourator", "123")).thenReturn(Optional.of("some-old-hash-that-differs"));
-        when(jobRepository.upsert(anyString(), anyString(), anyString(), any(), anyString(), anyString(), any(Instant.class)))
+        when(jobRepository.findContentHash(Source.YOURATOR, "123")).thenReturn(Optional.of("some-old-hash-that-differs"));
+        when(jobRepository.upsert(any(Source.class), anyString(), anyString(), any(), anyString(), anyString(), any(Instant.class)))
                 .thenReturn(false);
 
         NormalizerListener listener = new NormalizerListener(
                 java.util.List.of(parser), jobRepository, snapshotRepository, rawDocumentRepository, kafkaTemplate, meterRegistry);
-        RawEnvelope envelope = new RawEnvelope("yourator", "123", Instant.now(), "http://example.com/123", payload);
+        RawEnvelope envelope = new RawEnvelope(Source.YOURATOR, "123", Instant.now(), "http://example.com/123", payload);
 
         listener.onRaw(envelope);
 
-        verify(rawDocumentRepository, times(1)).insertIgnore(anyString(), anyString(), any(Instant.class), anyString());
+        verify(rawDocumentRepository, times(1)).insertIgnore(any(Source.class), anyString(), any(Instant.class), anyString());
         verify(snapshotRepository, times(1))
-                .insertIgnore(anyString(), anyString(), any(Instant.class), any(), anyString());
+                .insertIgnore(any(Source.class), anyString(), any(Instant.class), any(), anyString());
         assertThat(meterRegistry.get("jobradar.snapshot.write")
                         .tag("source", "yourator")
                         .tag("result", "written")

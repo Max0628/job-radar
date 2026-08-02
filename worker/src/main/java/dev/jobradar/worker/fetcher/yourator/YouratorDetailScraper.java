@@ -2,6 +2,7 @@ package dev.jobradar.worker.fetcher.yourator;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.jobradar.common.source.Source;
 import dev.jobradar.worker.fetcher.DetailScraper;
 import io.github.resilience4j.retry.annotation.Retry;
 import java.time.Duration;
@@ -24,7 +25,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class YouratorDetailScraper implements DetailScraper {
 
-    private static final String SOURCE = "yourator";
+    private static final Source SOURCE = Source.YOURATOR;
     private static final Duration MIN_INTERVAL = Duration.ofSeconds(1);
 
     private final ObjectMapper objectMapper;
@@ -38,7 +39,7 @@ public class YouratorDetailScraper implements DetailScraper {
     }
 
     @Override
-    public String source() {
+    public Source source() {
         return SOURCE;
     }
 

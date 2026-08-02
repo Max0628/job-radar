@@ -4,10 +4,10 @@ import dev.jobradar.common.envelope.EventType;
 import dev.jobradar.common.envelope.JobEventEnvelope;
 import dev.jobradar.common.envelope.RawEnvelope;
 import dev.jobradar.common.kafka.Topics;
+import dev.jobradar.common.source.Source;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -16,15 +16,15 @@ import org.springframework.stereotype.Component;
 
 /**
  * jobs.raw 消費者：正規化 + 冪等 upsert + 快照 + raw document，
- * 只有真正新增的一列（見 JobRepository.upsert）才發 NEW 事件（見 architecture.md D5）。
+ * 只有真正新增的一列（見 JobUpsertRepository.upsert）才發 NEW 事件（見 architecture.md D5）。
  */
 @Component
 public class NormalizerListener {
 
     private static final Logger log = LoggerFactory.getLogger(NormalizerListener.class);
 
-    private final Map<String, RawPayloadParser> parsersBySource;
-    private final JobRepository jobRepository;
+    private final Map<Source, RawPayloadParser> parsersBySource;
+    private final JobUpsertRepository jobRepository;
     private final JobSnapshotRepository snapshotRepository;
     private final RawDocumentRepository rawDocumentRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
@@ -32,13 +32,13 @@ public class NormalizerListener {
 
     public NormalizerListener(
             List<RawPayloadParser> parsers,
-            JobRepository jobRepository,
+            JobUpsertRepository jobRepository,
             JobSnapshotRepository snapshotRepository,
             RawDocumentRepository rawDocumentRepository,
             KafkaTemplate<String, Object> kafkaTemplate,
             MeterRegistry meterRegistry
     ) {
-        this.parsersBySource = parsers.stream().collect(Collectors.toMap(RawPayloadParser::source, p -> p));
+        this.parsersBySource = Source.indexBy(parsers, RawPayloadParser::source);
         this.jobRepository = jobRepository;
         this.snapshotRepository = snapshotRepository;
         this.rawDocumentRepository = rawDocumentRepository;
@@ -77,16 +77,16 @@ public class NormalizerListener {
             if (contentChanged) {
                 rawDocumentRepository.insertIgnore(envelope.source(), envelope.sourceJobId(), envelope.scrapedAt(), payloadJson);
                 snapshotRepository.insertIgnore(envelope.source(), envelope.sourceJobId(), envelope.scrapedAt(), normalized, contentHash);
-                meterRegistry.counter("jobradar.snapshot.write", "source", envelope.source(), "result", "written").increment();
+                meterRegistry.counter("jobradar.snapshot.write", "source", envelope.source().value(), "result", "written").increment();
             } else {
-                meterRegistry.counter("jobradar.snapshot.write", "source", envelope.source(), "result", "skipped").increment();
+                meterRegistry.counter("jobradar.snapshot.write", "source", envelope.source().value(), "result", "skipped").increment();
             }
 
             boolean isNew = jobRepository.upsert(
                     envelope.source(), envelope.sourceJobId(), envelope.url(), normalized,
                     contentHash, payloadJson, envelope.scrapedAt());
 
-            meterRegistry.counter("jobradar.parse", "source", envelope.source(), "result", "success").increment();
+            meterRegistry.counter("jobradar.parse", "source", envelope.source().value(), "result", "success").increment();
 
             if (isNew) {
                 JobEventEnvelope event = new JobEventEnvelope(
@@ -94,13 +94,13 @@ public class NormalizerListener {
                         EventType.NEW, normalized.title(), normalized.company(), formatSalary(normalized));
                 String key = envelope.source() + ":" + envelope.sourceJobId();
                 kafkaTemplate.send(Topics.JOBS_EVENTS, key, event);
-                meterRegistry.counter("jobradar.events.published", "source", envelope.source(), "type", "NEW").increment();
+                meterRegistry.counter("jobradar.events.published", "source", envelope.source().value(), "type", "NEW").increment();
                 log.info("New job upserted source={} sourceJobId={}", envelope.source(), envelope.sourceJobId());
             } else {
                 log.debug("Existing job re-upserted source={} sourceJobId={}", envelope.source(), envelope.sourceJobId());
             }
         } catch (Exception e) {
-            meterRegistry.counter("jobradar.parse", "source", envelope.source(), "result", "failure").increment();
+            meterRegistry.counter("jobradar.parse", "source", envelope.source().value(), "result", "failure").increment();
             throw e;
         }
     }

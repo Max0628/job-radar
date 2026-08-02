@@ -1,5 +1,6 @@
 package dev.jobradar.worker.normalizer;
 
+import dev.jobradar.common.source.Source;
 import java.sql.Timestamp;
 import java.time.Instant;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +18,7 @@ public class JobSnapshotRepository {
      * 不覆蓋既有快照（見 architecture.md D5）。
      */
     public void insertIgnore(
-            String source, String sourceJobId, Instant scrapedAt, NormalizedJob normalized, String contentHash
+            Source source, String sourceJobId, Instant scrapedAt, NormalizedJob normalized, String contentHash
     ) {
         jdbcClient.sql("""
                         INSERT INTO job_snapshots (source, source_job_id, scraped_at, title, company,
@@ -25,7 +26,7 @@ public class JobSnapshotRepository {
                         VALUES (:source, :sourceJobId, :scrapedAt, :title, :company, :salaryMin, :salaryMax, :contentHash)
                         ON CONFLICT (source, source_job_id, scraped_at) DO NOTHING
                         """)
-                .param("source", source)
+                .param("source", source.value())
                 .param("sourceJobId", sourceJobId)
                 .param("scrapedAt", Timestamp.from(scrapedAt))
                 .param("title", normalized.title())

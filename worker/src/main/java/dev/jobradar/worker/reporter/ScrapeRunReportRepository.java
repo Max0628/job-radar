@@ -1,5 +1,6 @@
 package dev.jobradar.worker.reporter;
 
+import dev.jobradar.common.domain.ScanMode;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -33,7 +34,7 @@ public class ScrapeRunReportRepository {
                 .query((rs, rowNum) -> new UnreportedScrapeRun(
                         rs.getLong("id"),
                         rs.getString("source"),
-                        rs.getString("scan_mode"),
+                        ScanMode.fromDbValue(rs.getString("scan_mode")),
                         rs.getBoolean("terminated_early"),
                         rs.getTimestamp("started_at").toInstant(),
                         rs.getTimestamp("finished_at").toInstant(),

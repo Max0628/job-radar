@@ -2,6 +2,7 @@ package dev.jobradar.worker.normalizer.yourator;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.jobradar.worker.normalizer.NormalizedJob;
+import dev.jobradar.common.source.Source;
 import dev.jobradar.worker.normalizer.RawPayloadParser;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -21,7 +22,7 @@ import org.springframework.stereotype.Component;
 public class YouratorRawPayloadParser implements RawPayloadParser {
 
     private static final Logger log = LoggerFactory.getLogger(YouratorRawPayloadParser.class);
-    private static final String SOURCE = "yourator";
+    private static final Source SOURCE = Source.YOURATOR;
 
     // datePosted 格式如 "2026-07-18 02:00:09 +0800"：空格分隔、offset 無冒號，非標準
     // ISO-8601，需要自訂 pattern（見 add-job-posted-date/design.md）
@@ -35,7 +36,7 @@ public class YouratorRawPayloadParser implements RawPayloadParser {
             Pattern.compile("[\\u4e00-\\u9fff&&[^市縣區]]{2,3}區");
 
     @Override
-    public String source() {
+    public Source source() {
         return SOURCE;
     }
 

@@ -1,5 +1,6 @@
 package dev.jobradar.worker.reporter;
 
+import dev.jobradar.common.domain.ScanMode;
 import dev.jobradar.worker.notifier.DiscordProperties;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
@@ -88,7 +89,7 @@ public class ScanSummaryReporter {
 
     private String buildDescription(UnreportedScrapeRun run, int newJobs, Duration duration) {
         StringBuilder sb = new StringBuilder();
-        sb.append("**模式**：").append("deep".equals(run.scanMode()) ? "深掃" : "淺掃").append('\n');
+        sb.append("**模式**：").append(run.scanMode() == ScanMode.DEEP ? "深掃" : "淺掃").append('\n');
         sb.append("**提早停止**：").append(run.terminatedEarly() ? "是" : "否").append('\n');
         sb.append("**掃描頁數**：").append(run.pagesScanned()).append('\n');
         sb.append("**掃描筆數**：").append(run.jobsSeen()).append('\n');

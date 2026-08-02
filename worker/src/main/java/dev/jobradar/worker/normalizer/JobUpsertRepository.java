@@ -1,6 +1,8 @@
 package dev.jobradar.worker.normalizer;
 
 import dev.jobradar.common.db.PgJson;
+import dev.jobradar.common.domain.JobStatus;
+import dev.jobradar.common.source.Source;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Optional;
@@ -8,9 +10,15 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
+/**
+ * jobs 的窄範圍寫入版本，只給 {@code NormalizerListener} 用（查 content_hash + 冪等
+ * upsert）。改名跟 {@code api.job.JobRepository} 那份唯讀查詢版本區隔開，避免兩個同名
+ * 類別在 IDE 全域搜尋時混淆——兩者刻意不共用（見 architecture.md D7：worker 不依賴
+ * api，讀寫語意也不同）。
+ */
 @Repository
 @RequiredArgsConstructor
-public class JobRepository {
+public class JobUpsertRepository {
 
     private final JdbcClient jdbcClient;
 
@@ -21,9 +29,9 @@ public class JobRepository {
      * 一直堆重複快照——`jobs` 本身的 upsert 不受這個判斷影響，仍然每次都跑，維持
      * `last_seen_at` 更新（見 D12：closed sweep 依賴的資料不可事後補）。
      */
-    public Optional<String> findContentHash(String source, String sourceJobId) {
+    public Optional<String> findContentHash(Source source, String sourceJobId) {
         return jdbcClient.sql("SELECT content_hash FROM jobs WHERE source = :source AND source_job_id = :sourceJobId")
-                .param("source", source)
+                .param("source", source.value())
                 .param("sourceJobId", sourceJobId)
                 .query(String.class)
                 .optional();
@@ -38,7 +46,7 @@ public class JobRepository {
      * 視為復活），其餘狀態維持不變。
      */
     public boolean upsert(
-            String source, String sourceJobId, String url, NormalizedJob normalized,
+            Source source, String sourceJobId, String url, NormalizedJob normalized,
             String contentHash, String attrsJson, Instant seenAt
     ) {
         Boolean inserted = jdbcClient.sql("""
@@ -48,7 +56,7 @@ public class JobRepository {
                                           min_work_exp_year, number_of_openings, city, district,
                                           posted_at, first_seen_at, last_seen_at)
                         VALUES (:source, :sourceJobId, :title, :company, :salaryMin, :salaryMax,
-                                :salaryCurrency, :url, :contentHash, :attrs, 'NEW',
+                                :salaryCurrency, :url, :contentHash, :attrs, '%s',
                                 :employmentType, :seniorityLevel, :jobType, :langName,
                                 :minWorkExpYear, :numberOfOpenings, :city, :district,
                                 :postedAt, :seenAt, :seenAt)
@@ -70,11 +78,11 @@ public class JobRepository {
                             city = excluded.city,
                             district = excluded.district,
                             posted_at = excluded.posted_at,
-                            status = CASE WHEN jobs.status IN ('NEW', 'CLOSED') THEN 'ACTIVE' ELSE jobs.status END,
+                            status = CASE WHEN jobs.status IN ('%s', '%s') THEN '%s' ELSE jobs.status END,
                             last_seen_at = excluded.last_seen_at
                         RETURNING (xmax = 0) AS inserted
-                        """)
-                .param("source", source)
+                        """.formatted(JobStatus.NEW, JobStatus.NEW, JobStatus.CLOSED, JobStatus.ACTIVE))
+                .param("source", source.value())
                 .param("sourceJobId", sourceJobId)
                 .param("title", normalized.title())
                 .param("company", normalized.company())

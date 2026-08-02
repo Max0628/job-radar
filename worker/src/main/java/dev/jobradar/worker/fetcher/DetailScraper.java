@@ -1,6 +1,7 @@
 package dev.jobradar.worker.fetcher;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import dev.jobradar.common.source.Source;
 
 /**
  * 每個來源各自實作的 detail fetcher adapter（見 architecture.md D3）。
@@ -8,7 +9,7 @@ import com.fasterxml.jackson.databind.JsonNode;
  */
 public interface DetailScraper {
 
-    String source();
+    Source source();
 
     JsonNode fetch(String sourceJobId, String url);
 }

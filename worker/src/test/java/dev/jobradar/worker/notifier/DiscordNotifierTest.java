@@ -9,6 +9,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import dev.jobradar.common.envelope.EventType;
 import dev.jobradar.common.envelope.JobEventEnvelope;
+import dev.jobradar.common.source.Source;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
@@ -41,7 +42,7 @@ class DiscordNotifierTest {
 
         Instant scrapedAt = Instant.now().minus(Duration.ofSeconds(30));
         JobEventEnvelope event = new JobEventEnvelope(
-                "yourator", "123", scrapedAt, "http://example.com/123",
+                Source.YOURATOR, "123", scrapedAt, "http://example.com/123",
                 EventType.NEW, "Backend Engineer", "Acme", "TWD 60000 - 80000");
 
         notifier.onEvent(event);
@@ -65,7 +66,7 @@ class DiscordNotifierTest {
                 new DiscordProperties("https://discord.example.com/webhook"), builder, meterRegistry);
 
         JobEventEnvelope event = new JobEventEnvelope(
-                "yourator", "123", Instant.now(), "http://example.com/123",
+                Source.YOURATOR, "123", Instant.now(), "http://example.com/123",
                 EventType.NEW, "Backend Engineer", "Acme", "TWD 60000 - 80000");
 
         // 例外必須向上傳播給 DefaultErrorHandler，否則 offset 會被 commit、訊息永久遺失
@@ -90,7 +91,7 @@ class DiscordNotifierTest {
                 new DiscordProperties("https://discord.example.com/webhook"), builder, meterRegistry);
 
         JobEventEnvelope event = new JobEventEnvelope(
-                "yourator", "123", Instant.now(), "http://example.com/123",
+                Source.YOURATOR, "123", Instant.now(), "http://example.com/123",
                 EventType.CHANGED, "Backend Engineer", "Acme", "TWD 60000 - 80000");
 
         notifier.onEvent(event);
@@ -108,7 +109,7 @@ class DiscordNotifierTest {
         DiscordNotifier notifier = new DiscordNotifier(new DiscordProperties(""), builder, meterRegistry);
 
         JobEventEnvelope event = new JobEventEnvelope(
-                "yourator", "123", Instant.now(), "http://example.com/123",
+                Source.YOURATOR, "123", Instant.now(), "http://example.com/123",
                 EventType.NEW, "Backend Engineer", "Acme", "TWD 60000 - 80000");
 
         notifier.onEvent(event);
