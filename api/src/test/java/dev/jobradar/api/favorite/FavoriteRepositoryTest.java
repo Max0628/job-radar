@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.zaxxer.hikari.HikariDataSource;
 import dev.jobradar.common.domain.Favorite;
+import dev.jobradar.common.source.Source;
 import java.util.List;
 import java.util.Map;
 import org.flywaydb.core.Flyway;
@@ -61,17 +62,17 @@ class FavoriteRepositoryTest {
 
     @Test
     void insertIfAbsentCreatesNewRecord() {
-        Favorite favorite = repository.insertIfAbsent("yourator", "41246");
+        Favorite favorite = repository.insertIfAbsent(Source.YOURATOR, "41246");
 
         assertThat(favorite.id()).isPositive();
-        assertThat(favorite.source()).isEqualTo("yourator");
+        assertThat(favorite.source()).isEqualTo(Source.YOURATOR);
         assertThat(favorite.sourceJobId()).isEqualTo("41246");
     }
 
     @Test
     void insertIfAbsentIsIdempotent() {
-        Favorite first = repository.insertIfAbsent("yourator", "41246");
-        Favorite second = repository.insertIfAbsent("yourator", "41246");
+        Favorite first = repository.insertIfAbsent(Source.YOURATOR, "41246");
+        Favorite second = repository.insertIfAbsent(Source.YOURATOR, "41246");
 
         assertThat(second.id()).isEqualTo(first.id());
         assertThat(repository.findAll()).hasSize(1);
@@ -79,7 +80,7 @@ class FavoriteRepositoryTest {
 
     @Test
     void deleteRemovesRecord() {
-        Favorite favorite = repository.insertIfAbsent("yourator", "41246");
+        Favorite favorite = repository.insertIfAbsent(Source.YOURATOR, "41246");
 
         boolean deleted = repository.delete(favorite.id());
 
@@ -94,11 +95,11 @@ class FavoriteRepositoryTest {
 
     @Test
     void findFavoriteIdsByPairKeysReturnsOnlyMatchingPairs() {
-        Favorite target = repository.insertIfAbsent("yourator", "41246");
-        repository.insertIfAbsent("cakeresume", "backend-engineer-1");
+        Favorite target = repository.insertIfAbsent(Source.YOURATOR, "41246");
+        repository.insertIfAbsent(Source.CAKERESUME, "backend-engineer-1");
         // 故意製造一個「跨組合」情境：cakeresume 平台剛好有個 id 跟 yourator 的 sourceJobId
         // 撞名，驗證 pair-key 比對不會誤判成收藏（見 FavoriteRepository 的實作備註）
-        repository.insertIfAbsent("cakeresume", "41246");
+        repository.insertIfAbsent(Source.CAKERESUME, "41246");
 
         Map<String, Long> result = repository.findFavoriteIdsByPairKeys(
                 List.of("yourator:41246", "yourator:99999"));
@@ -113,10 +114,10 @@ class FavoriteRepositoryTest {
 
     @Test
     void findFavoriteIdReflectsCurrentState() {
-        assertThat(repository.findFavoriteId("yourator", "41246")).isEmpty();
+        assertThat(repository.findFavoriteId(Source.YOURATOR, "41246")).isEmpty();
 
-        Favorite created = repository.insertIfAbsent("yourator", "41246");
+        Favorite created = repository.insertIfAbsent(Source.YOURATOR, "41246");
 
-        assertThat(repository.findFavoriteId("yourator", "41246")).contains(created.id());
+        assertThat(repository.findFavoriteId(Source.YOURATOR, "41246")).contains(created.id());
     }
 }

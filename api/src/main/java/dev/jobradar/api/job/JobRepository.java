@@ -1,6 +1,8 @@
 package dev.jobradar.api.job;
 
 import dev.jobradar.common.domain.Job;
+import dev.jobradar.common.domain.JobStatus;
+import dev.jobradar.common.source.Source;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -8,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import lombok.Value;
+import lombok.experimental.Accessors;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -114,11 +118,11 @@ public class JobRepository {
         }
         // status 沒帶篩選時，預設排除 CLOSED（見 job-browse-api spec）；
         // 明確帶 status 時尊重使用者指定的值（含 CLOSED，供未來查歷史用）
-        if (filter.status() != null && !filter.status().isBlank()) {
+        if (filter.status() != null) {
             conditions.add("status = :status");
-            params.put("status", filter.status());
+            params.put("status", filter.status().name());
         } else {
-            conditions.add("status != 'CLOSED'");
+            conditions.add("status != '%s'".formatted(JobStatus.CLOSED.name()));
         }
 
         String sql = conditions.isEmpty() ? "" : "WHERE " + String.join(" AND ", conditions);
@@ -128,7 +132,7 @@ public class JobRepository {
     private Job mapRow(ResultSet rs, int rowNum) throws SQLException {
         return new Job(
                 rs.getLong("id"),
-                rs.getString("source"),
+                Source.fromValue(rs.getString("source")),
                 rs.getString("source_job_id"),
                 rs.getString("title"),
                 rs.getString("company"),
@@ -137,7 +141,7 @@ public class JobRepository {
                 rs.getString("salary_currency"),
                 rs.getString("url"),
                 rs.getString("content_hash"),
-                rs.getString("status"),
+                JobStatus.valueOf(rs.getString("status")),
                 rs.getString("employment_type"),
                 rs.getString("seniority_level"),
                 rs.getString("job_type"),
@@ -152,7 +156,12 @@ public class JobRepository {
         );
     }
 
-    private record WhereClause(String sql, Map<String, Object> params) {
+    @Value
+    @Accessors(fluent = true)
+    private static class WhereClause {
+        String sql;
+        Map<String, Object> params;
+
         JdbcClient.StatementSpec bind(JdbcClient.StatementSpec spec) {
             for (Map.Entry<String, Object> entry : params.entrySet()) {
                 spec = spec.param(entry.getKey(), entry.getValue());

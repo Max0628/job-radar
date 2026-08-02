@@ -3,16 +3,17 @@ package dev.jobradar.api.searchquery;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.jobradar.common.db.PgJson;
 import dev.jobradar.common.domain.SearchQuery;
+import dev.jobradar.common.source.Source;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * search_queries 表的完整 CRUD（見 add-job-dashboard/specs/search-query-management-api）。
@@ -75,7 +76,7 @@ public class SearchQueryRepository {
                         VALUES (:source, :location, :categories, :intervalMinutes, :enabled)
                         RETURNING id
                         """)
-                .param("source", query.source())
+                .param("source", query.source().value())
                 .param("location", query.location())
                 .param("categories", toJsonb(query.categories()))
                 .param("intervalMinutes", query.intervalMinutes())
@@ -103,7 +104,7 @@ public class SearchQueryRepository {
                             disabled_reason = :disabledReason
                         WHERE id = :id
                         """)
-                .param("source", query.source())
+                .param("source", query.source().value())
                 .param("location", query.location())
                 .param("categories", toJsonb(query.categories()))
                 .param("intervalMinutes", query.intervalMinutes())
@@ -118,7 +119,12 @@ public class SearchQueryRepository {
     /**
      * 刪除時一併清掉對應的 scrape_cursors（有 FK 參照，不先刪會違反約束），
      * 見 search-query-management-api spec 的「刪除爬蟲設定」scenario。
+     * `@Transactional` 讓兩個 DELETE 語句原子化——這是全專案唯一一處需要交易保護的寫入
+     * （其餘寫入路徑都是單一語句或冪等 upsert/insert-ignore，靠重試自我修復，不需要交易，
+     * 見 DECIPLINE.md 的盤點討論），因為這裡若中途失敗會留下「cursor 已刪、query 還在」
+     * 的不一致狀態。
      */
+    @Transactional
     public boolean delete(long id) {
         jdbcClient.sql("DELETE FROM scrape_cursors WHERE search_query_id = :id")
                 .param("id", id)
@@ -132,7 +138,7 @@ public class SearchQueryRepository {
     private SearchQuery mapRow(ResultSet rs, int rowNum) throws SQLException {
         return new SearchQuery(
                 rs.getLong("id"),
-                rs.getString("source"),
+                Source.fromValue(rs.getString("source")),
                 rs.getString("location"),
                 parseCategories(rs.getString("categories")),
                 rs.getInt("interval_minutes"),
@@ -162,9 +168,5 @@ public class SearchQueryRepository {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to serialize categories to JSON", e);
         }
-    }
-
-    public static Set<String> registeredSources() {
-        return Set.of("yourator", "cakeresume", "104");
     }
 }

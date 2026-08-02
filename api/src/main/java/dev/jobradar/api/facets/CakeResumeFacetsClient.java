@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.jobradar.common.source.CakeResumeEndpoints;
+import dev.jobradar.common.source.Source;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -21,7 +22,7 @@ import org.springframework.web.client.RestClient;
 @Component
 public class CakeResumeFacetsClient implements FacetsClient {
 
-    private static final String SOURCE = "cakeresume";
+    private static final Source SOURCE = Source.CAKERESUME;
     private static final String USER_AGENT =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 job-radar/0.1";
 
@@ -57,7 +58,7 @@ public class CakeResumeFacetsClient implements FacetsClient {
     }
 
     @Override
-    public String source() {
+    public Source source() {
         return SOURCE;
     }
 

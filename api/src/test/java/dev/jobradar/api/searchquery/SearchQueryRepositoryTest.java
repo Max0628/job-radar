@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariDataSource;
 import dev.jobradar.common.domain.SearchQuery;
+import dev.jobradar.common.source.Source;
 import java.util.List;
 import java.util.Optional;
 import org.flywaydb.core.Flyway;
@@ -63,7 +64,7 @@ class SearchQueryRepositoryTest {
 
     @Test
     void insertsAndReadsBackWithCategories() {
-        SearchQuery request = new SearchQuery(0, "yourator", "TPE",
+        SearchQuery request = new SearchQuery(0, Source.YOURATOR, "TPE",
                 List.of("後端工程", "DevOps / SRE"), 120, true, null);
 
         SearchQuery created = repository.insert(request);
@@ -80,7 +81,7 @@ class SearchQueryRepositoryTest {
     void insertWithNullCategoriesReadsBackAsEmptyList() {
         // 拿掉 keyword 之後 API 層會擋空 categories（見 SearchQueryController），
         // 但 repository 本身仍應忠實反映 DB 現況，不多做隱性假設
-        SearchQuery request = new SearchQuery(0, "cakeresume", "台北市, 台灣",
+        SearchQuery request = new SearchQuery(0, Source.CAKERESUME, "台北市, 台灣",
                 null, 120, true, null);
 
         SearchQuery created = repository.insert(request);
@@ -91,10 +92,10 @@ class SearchQueryRepositoryTest {
     @Test
     void updateChangesFields() {
         SearchQuery created = repository.insert(
-                new SearchQuery(0, "yourator", "TPE", List.of("後端工程"), 120, true, null));
+                new SearchQuery(0, Source.YOURATOR, "TPE", List.of("後端工程"), 120, true, null));
 
         Optional<SearchQuery> updated = repository.update(created.id(),
-                new SearchQuery(created.id(), "yourator", "NWT",
+                new SearchQuery(created.id(), Source.YOURATOR, "NWT",
                         List.of("全端工程", "資料庫"), 60, false, null));
 
         assertThat(updated).isPresent();
@@ -112,7 +113,7 @@ class SearchQueryRepositoryTest {
     @Test
     void reEnablingClearsDisabledReasonButManualDisablePreservesNull() {
         SearchQuery created = repository.insert(
-                new SearchQuery(0, "104", null, List.of("2007001016"), 120, true, null));
+                new SearchQuery(0, Source.JOB104, null, List.of("2007001016"), 120, true, null));
         jdbcClient.sql("UPDATE search_queries SET enabled = FALSE, disabled_reason = :reason WHERE id = :id")
                 .param("reason", "104 returned 403 for page 1")
                 .param("id", created.id())
@@ -124,7 +125,7 @@ class SearchQueryRepositoryTest {
         assertThat(stillDisabled.get().disabledReason()).isEqualTo("104 returned 403 for page 1");
 
         Optional<SearchQuery> reEnabled = repository.update(created.id(),
-                new SearchQuery(created.id(), "104", null, List.of("2007001016"), 120, true, null));
+                new SearchQuery(created.id(), Source.JOB104, null, List.of("2007001016"), 120, true, null));
 
         assertThat(reEnabled).isPresent();
         assertThat(reEnabled.get().enabled()).isTrue();
@@ -134,7 +135,7 @@ class SearchQueryRepositoryTest {
     @Test
     void updateNonExistentIdReturnsEmpty() {
         Optional<SearchQuery> result = repository.update(999_999L,
-                new SearchQuery(999_999L, "yourator", null, null, 1, true, null));
+                new SearchQuery(999_999L, Source.YOURATOR, null, null, 1, true, null));
 
         assertThat(result).isEmpty();
     }
@@ -142,7 +143,7 @@ class SearchQueryRepositoryTest {
     @Test
     void deleteRemovesRowAndAssociatedCursor() {
         SearchQuery created = repository.insert(
-                new SearchQuery(0, "yourator", null, null, 1, true, null));
+                new SearchQuery(0, Source.YOURATOR, null, null, 1, true, null));
         jdbcClient.sql("INSERT INTO scrape_cursors (search_query_id) VALUES (:id)")
                 .param("id", created.id())
                 .update();
@@ -166,9 +167,9 @@ class SearchQueryRepositoryTest {
     @Test
     void findAllRespectsSortAndPagination() {
         // keyword 拿掉之後改用 location 當排序區分依據，測試意圖不變：驗證排序跟分頁
-        repository.insert(new SearchQuery(0, "yourator", "b", null, 1, true, null));
-        repository.insert(new SearchQuery(0, "yourator", "a", null, 1, true, null));
-        repository.insert(new SearchQuery(0, "yourator", "c", null, 1, true, null));
+        repository.insert(new SearchQuery(0, Source.YOURATOR, "b", null, 1, true, null));
+        repository.insert(new SearchQuery(0, Source.YOURATOR, "a", null, 1, true, null));
+        repository.insert(new SearchQuery(0, Source.YOURATOR, "c", null, 1, true, null));
 
         List<SearchQuery> sorted = repository.findAll(0, 10, "location", "ASC");
 

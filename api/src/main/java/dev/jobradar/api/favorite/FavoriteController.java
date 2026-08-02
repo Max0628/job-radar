@@ -1,9 +1,16 @@
 package dev.jobradar.api.favorite;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import dev.jobradar.common.domain.Favorite;
+import dev.jobradar.common.source.Source;
 import java.util.List;
 import java.util.Map;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.RequiredArgsConstructor;
+import lombok.Value;
+import lombok.experimental.Accessors;
+import lombok.extern.jackson.Jacksonized;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -25,23 +32,36 @@ import org.springframework.web.server.ResponseStatusException;
 @RequiredArgsConstructor
 public class FavoriteController {
 
-    private final FavoriteRepository repository;
+    private final FavoriteService favoriteService;
 
     @GetMapping("/api/favorites")
     public ResponseEntity<List<Favorite>> list() {
-        List<Favorite> favorites = repository.findAll();
+        List<Favorite> favorites = favoriteService.list();
         return ResponseEntity.ok()
                 .header("X-Total-Count", String.valueOf(favorites.size()))
                 .body(favorites);
     }
 
-    public record CreateFavoriteRequest(String source, String sourceJobId) {
+    /**
+     * {@code @Jacksonized @Builder}：這個類別會被 Jackson 反序列化（下面的
+     * {@code @RequestBody CreateFavoriteRequest}），{@code @AllArgsConstructor} 保留
+     * public 全參數建構子。
+     */
+    @Value
+    @Builder
+    @Jacksonized
+    @AllArgsConstructor
+    @Accessors(fluent = true)
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    public static class CreateFavoriteRequest {
+        Source source;
+        String sourceJobId;
     }
 
     @PostMapping("/api/favorites")
     @ResponseStatus(HttpStatus.CREATED)
     public Favorite create(@RequestBody CreateFavoriteRequest request) {
-        return repository.insertIfAbsent(request.source(), request.sourceJobId());
+        return favoriteService.create(request.source(), request.sourceJobId());
     }
 
     /**
@@ -50,7 +70,7 @@ public class FavoriteController {
      */
     @DeleteMapping("/api/favorites/{id}")
     public ResponseEntity<Map<String, Long>> delete(@PathVariable long id) {
-        boolean deleted = repository.delete(id);
+        boolean deleted = favoriteService.delete(id);
         if (!deleted) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }

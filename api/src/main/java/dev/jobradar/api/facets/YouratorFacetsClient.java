@@ -1,6 +1,7 @@
 package dev.jobradar.api.facets;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import dev.jobradar.common.source.Source;
 import dev.jobradar.common.source.YouratorEndpoints;
 import java.util.ArrayList;
 import java.util.List;
@@ -16,7 +17,7 @@ import org.springframework.web.client.RestClient;
 @Component
 public class YouratorFacetsClient implements FacetsClient {
 
-    private static final String SOURCE = "yourator";
+    private static final Source SOURCE = Source.YOURATOR;
     private static final String USER_AGENT =
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 job-radar/0.1";
 
@@ -40,7 +41,7 @@ public class YouratorFacetsClient implements FacetsClient {
     }
 
     @Override
-    public String source() {
+    public Source source() {
         return SOURCE;
     }
 

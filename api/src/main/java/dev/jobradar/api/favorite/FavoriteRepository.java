@@ -1,6 +1,7 @@
 package dev.jobradar.api.favorite;
 
 import dev.jobradar.common.domain.Favorite;
+import dev.jobradar.common.source.Source;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.HashMap;
@@ -34,14 +35,14 @@ public class FavoriteRepository {
      * （見 job-favorites spec「成功收藏」scenario）。ON CONFLICT DO UPDATE 一步到位，
      * 不用先查再寫（避免不必要的 race window）。
      */
-    public Favorite insertIfAbsent(String source, String sourceJobId) {
+    public Favorite insertIfAbsent(Source source, String sourceJobId) {
         Long id = jdbcClient.sql("""
                         INSERT INTO favorites (source, source_job_id)
                         VALUES (:source, :sourceJobId)
                         ON CONFLICT (source, source_job_id) DO UPDATE SET source = excluded.source
                         RETURNING id
                         """)
-                .param("source", source)
+                .param("source", source.value())
                 .param("sourceJobId", sourceJobId)
                 .query(Long.class)
                 .single();
@@ -83,16 +84,16 @@ public class FavoriteRepository {
         return result;
     }
 
-    public Optional<Long> findFavoriteId(String source, String sourceJobId) {
+    public Optional<Long> findFavoriteId(Source source, String sourceJobId) {
         return findBySourceAndSourceJobId(source, sourceJobId).map(Favorite::id);
     }
 
-    private Optional<Favorite> findBySourceAndSourceJobId(String source, String sourceJobId) {
+    private Optional<Favorite> findBySourceAndSourceJobId(Source source, String sourceJobId) {
         return jdbcClient.sql("""
                         SELECT id, source, source_job_id, created_at FROM favorites
                         WHERE source = :source AND source_job_id = :sourceJobId
                         """)
-                .param("source", source)
+                .param("source", source.value())
                 .param("sourceJobId", sourceJobId)
                 .query(this::mapRow)
                 .optional();
@@ -108,7 +109,7 @@ public class FavoriteRepository {
     private Favorite mapRow(ResultSet rs, int rowNum) throws SQLException {
         return new Favorite(
                 rs.getLong("id"),
-                rs.getString("source"),
+                Source.fromValue(rs.getString("source")),
                 rs.getString("source_job_id"),
                 rs.getTimestamp("created_at").toInstant()
         );

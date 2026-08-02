@@ -1,5 +1,7 @@
 package dev.jobradar.api.facets;
 
+import dev.jobradar.common.source.Source;
+
 /**
  * 各來源的 facets（分類/地區選單）抓取器，比照 collector 模組
  * {@code dev.jobradar.collector.scan.JobListScraper} 的 source() + 動作 這個介面形狀，
@@ -8,7 +10,7 @@ package dev.jobradar.api.facets;
  */
 public interface FacetsClient {
 
-    String source();
+    Source source();
 
     SourceFacets fetch();
 }

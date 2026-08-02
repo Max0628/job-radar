@@ -21,12 +21,15 @@ import org.springframework.web.server.ResponseStatusException;
  * search_queries 的 CRUD 端點，供 Dashboard 配置台使用（見
  * add-job-dashboard/specs/search-query-management-api）。分頁/排序慣例配合
  * React Admin：_start/_end/_sort/_order + X-Total-Count header。
+ *
+ * 驗證/業務規則（categories 不可空、單一 Yourator 分類警告）都移到
+ * {@link SearchQueryService}，這裡只做 HTTP 輸入輸出轉換跟回應 header 組裝。
  */
 @RestController
 @RequiredArgsConstructor
 public class SearchQueryController {
 
-    private final SearchQueryRepository repository;
+    private final SearchQueryService searchQueryService;
 
     @GetMapping("/api/search-queries")
     public ResponseEntity<List<SearchQuery>> list(
@@ -35,8 +38,8 @@ public class SearchQueryController {
             @RequestParam(name = "_sort", defaultValue = "id") String sort,
             @RequestParam(name = "_order", defaultValue = "ASC") String order
     ) {
-        List<SearchQuery> items = repository.findAll(start, end, sort, order);
-        long total = repository.count();
+        List<SearchQuery> items = searchQueryService.list(start, end, sort, order);
+        long total = searchQueryService.count();
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_RANGE, "search-queries %d-%d/%d".formatted(start, end, total))
                 .header("X-Total-Count", String.valueOf(total))
@@ -45,15 +48,13 @@ public class SearchQueryController {
 
     @GetMapping("/api/search-queries/{id}")
     public SearchQuery getOne(@PathVariable long id) {
-        return repository.findById(id)
+        return searchQueryService.findOne(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
     }
 
     @PostMapping("/api/search-queries")
     public ResponseEntity<SearchQuery> create(@RequestBody SearchQuery request) {
-        validateSource(request.source());
-        validateCategoriesNotEmpty(request.categories());
-        SearchQuery created = repository.insert(request);
+        SearchQuery created = searchQueryService.create(request);
 
         ResponseEntity.BodyBuilder response = ResponseEntity.status(HttpStatus.CREATED);
         addSingleCategoryWarningIfNeeded(response, request);
@@ -62,9 +63,7 @@ public class SearchQueryController {
 
     @PutMapping("/api/search-queries/{id}")
     public ResponseEntity<SearchQuery> update(@PathVariable long id, @RequestBody SearchQuery request) {
-        validateSource(request.source());
-        validateCategoriesNotEmpty(request.categories());
-        SearchQuery updated = repository.update(id, request)
+        SearchQuery updated = searchQueryService.update(id, request)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
 
         ResponseEntity.BodyBuilder response = ResponseEntity.ok();
@@ -79,39 +78,15 @@ public class SearchQueryController {
      */
     @DeleteMapping("/api/search-queries/{id}")
     public ResponseEntity<Map<String, Long>> delete(@PathVariable long id) {
-        boolean deleted = repository.delete(id);
+        boolean deleted = searchQueryService.delete(id);
         if (!deleted) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
         return ResponseEntity.ok(Map.of("id", id));
     }
 
-    private void validateSource(String source) {
-        if (!SearchQueryRepository.registeredSources().contains(source)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "source must be one of " + SearchQueryRepository.registeredSources());
-        }
-    }
-
-    /**
-     * 拿掉 keyword 之後，categories 是唯一還能限縮搜尋範圍的欄位（見
-     * add-crawl-improvements design.md）——留空會變成「不限任何條件，把整個平台
-     * 的職缺都抓下來」，幾乎不會是使用者真正想要的，直接在建立/更新時擋掉。
-     */
-    private void validateCategoriesNotEmpty(List<String> categories) {
-        if (categories == null || categories.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "categories must not be empty");
-        }
-    }
-
-    /**
-     * Yourator 的 category[] 單一值過濾不可靠（見 design.md D8 決策 1），不擋這筆設定，
-     * 但用 header 附加警告，提醒使用者最好帶至少 2 個分類值。
-     */
     private void addSingleCategoryWarningIfNeeded(ResponseEntity.BodyBuilder response, SearchQuery request) {
-        if ("yourator".equals(request.source())
-                && request.categories() != null
-                && request.categories().size() == 1) {
+        if (searchQueryService.needsSingleCategoryWarning(request)) {
             response.header("X-Warning",
                     "Yourator category[] filtering is unreliable with a single value; "
                             + "consider bundling at least 2 categories.");

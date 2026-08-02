@@ -2,6 +2,7 @@ package dev.jobradar.api.facets;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.jobradar.common.source.Job104Endpoints;
+import dev.jobradar.common.source.Source;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.http.HttpHeaders;
@@ -18,7 +19,7 @@ import org.springframework.web.client.RestClient;
 @Component
 public class Job104FacetsClient implements FacetsClient {
 
-    private static final String SOURCE = "104";
+    private static final Source SOURCE = Source.JOB104;
 
     private final RestClient restClient;
 
@@ -30,7 +31,7 @@ public class Job104FacetsClient implements FacetsClient {
     }
 
     @Override
-    public String source() {
+    public Source source() {
         return SOURCE;
     }
 

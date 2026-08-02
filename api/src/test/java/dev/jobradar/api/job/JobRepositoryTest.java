@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.zaxxer.hikari.HikariDataSource;
 import dev.jobradar.common.domain.Job;
+import dev.jobradar.common.domain.JobStatus;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
@@ -156,7 +157,7 @@ class JobRepositoryTest {
         insertJob("yourator", "1", "Closed Job", "Acme", null, null, null, null, null, "CLOSED");
 
         List<Job> results = repository.search(
-                new JobSearchFilter(null, null, null, null, null, null, null, "CLOSED"),
+                new JobSearchFilter(null, null, null, null, null, null, null, JobStatus.CLOSED),
                 0, 20, "id", "ASC");
 
         assertThat(results).extracting(Job::title).containsExactly("Closed Job");

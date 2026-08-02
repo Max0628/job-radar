@@ -1,11 +1,13 @@
 package dev.jobradar.api.facets;
 
+import dev.jobradar.common.source.Source;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
+import lombok.Value;
+import lombok.experimental.Accessors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -20,30 +22,48 @@ public class FacetsService {
 
     private static final Duration TTL = Duration.ofHours(12);
 
-    private final Map<String, FacetsClient> clientsBySource;
-    private final Map<String, CachedEntry> cache = new ConcurrentHashMap<>();
+    private final Map<Source, FacetsClient> clientsBySource;
+    private final Map<Source, CachedEntry> cache = new ConcurrentHashMap<>();
 
     public FacetsService(List<FacetsClient> clients) {
-        this.clientsBySource = clients.stream().collect(Collectors.toMap(FacetsClient::source, c -> c));
+        this.clientsBySource = Source.indexBy(clients, FacetsClient::source);
     }
 
+    /**
+     * source 在 HTTP 邊界維持 String（來自 {@code @PathVariable}），內部才轉成 Source——
+     * 無法辨識的字串跟「有辨識但沒有對應 FacetsClient」統一回同一種 400 錯誤訊息，
+     * 維持跟轉換前一致的行為。
+     */
     public SourceFacets getFacets(String source) {
-        FacetsClient client = clientsBySource.get(source);
+        Source parsedSource = parseSourceOrNull(source);
+        FacetsClient client = parsedSource == null ? null : clientsBySource.get(parsedSource);
         if (client == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "source must be one of " + clientsBySource.keySet());
         }
 
-        CachedEntry cached = cache.get(source);
+        CachedEntry cached = cache.get(parsedSource);
         if (cached != null && cached.fetchedAt().plus(TTL).isAfter(Instant.now())) {
             return cached.facets();
         }
 
         SourceFacets facets = client.fetch();
-        cache.put(source, new CachedEntry(facets, Instant.now()));
+        cache.put(parsedSource, new CachedEntry(facets, Instant.now()));
         return facets;
     }
 
-    private record CachedEntry(SourceFacets facets, Instant fetchedAt) {
+    private Source parseSourceOrNull(String source) {
+        try {
+            return Source.fromValue(source);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    @Value
+    @Accessors(fluent = true)
+    private static class CachedEntry {
+        SourceFacets facets;
+        Instant fetchedAt;
     }
 }

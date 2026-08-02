@@ -7,6 +7,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import dev.jobradar.common.source.Source;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
@@ -16,7 +17,7 @@ class FacetsServiceTest {
     @Test
     void secondCallWithinTtlUsesCacheInsteadOfRefetching() {
         FacetsClient client = mock(FacetsClient.class);
-        when(client.source()).thenReturn("yourator");
+        when(client.source()).thenReturn(Source.YOURATOR);
         SourceFacets facets = new SourceFacets(List.of(new Facet("後端工程", "後端工程")), List.of());
         when(client.fetch()).thenReturn(facets);
 
@@ -34,7 +35,7 @@ class FacetsServiceTest {
     @Test
     void unknownSourceThrowsBadRequest() {
         FacetsClient client = mock(FacetsClient.class);
-        when(client.source()).thenReturn("yourator");
+        when(client.source()).thenReturn(Source.YOURATOR);
         FacetsService service = new FacetsService(List.of(client));
 
         assertThatThrownBy(() -> service.getFacets("not-a-real-source"))

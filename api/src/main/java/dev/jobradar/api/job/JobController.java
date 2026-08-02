@@ -1,9 +1,7 @@
 package dev.jobradar.api.job;
 
-import dev.jobradar.api.favorite.FavoriteRepository;
-import dev.jobradar.common.domain.Job;
+import dev.jobradar.common.domain.JobStatus;
 import java.util.List;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -23,8 +21,7 @@ import org.springframework.web.server.ResponseStatusException;
 @RequiredArgsConstructor
 public class JobController {
 
-    private final JobRepository jobRepository;
-    private final FavoriteRepository favoriteRepository;
+    private final JobService jobService;
 
     @GetMapping("/api/jobs")
     public ResponseEntity<List<JobResponse>> list(
@@ -35,7 +32,7 @@ public class JobController {
             @RequestParam(required = false) Long salaryMax,
             @RequestParam(required = false) String jobType,
             @RequestParam(required = false) String source,
-            @RequestParam(required = false) String status,
+            @RequestParam(required = false) JobStatus status,
             @RequestParam(name = "_start", defaultValue = "0") int start,
             @RequestParam(name = "_end", defaultValue = "20") int end,
             @RequestParam(name = "_sort", defaultValue = "postedAt") String sort,
@@ -43,15 +40,8 @@ public class JobController {
     ) {
         JobSearchFilter filter = new JobSearchFilter(q, district, city, salaryMin, salaryMax,
                 jobType, source, status);
-        List<Job> jobs = jobRepository.search(filter, start, end, sort, order);
-        long total = jobRepository.count(filter);
-
-        Map<String, Long> favoriteIds = favoriteRepository.findFavoriteIdsByPairKeys(
-                jobs.stream().map(j -> j.source() + ":" + j.sourceJobId()).toList());
-
-        List<JobResponse> body = jobs.stream()
-                .map(j -> JobResponse.from(j, favoriteIds.get(j.source() + ":" + j.sourceJobId())))
-                .toList();
+        List<JobResponse> body = jobService.search(filter, start, end, sort, order);
+        long total = jobService.count(filter);
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_RANGE, "jobs %d-%d/%d".formatted(start, end, total))
@@ -61,9 +51,7 @@ public class JobController {
 
     @GetMapping("/api/jobs/{id}")
     public JobResponse getOne(@PathVariable long id) {
-        Job job = jobRepository.findById(id)
+        return jobService.findOne(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
-        Long favoriteId = favoriteRepository.findFavoriteId(job.source(), job.sourceJobId()).orElse(null);
-        return JobResponse.from(job, favoriteId);
     }
 }
