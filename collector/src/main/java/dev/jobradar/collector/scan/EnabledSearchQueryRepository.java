@@ -2,15 +2,22 @@ package dev.jobradar.collector.scan;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.jobradar.common.domain.SearchQuery;
+import dev.jobradar.common.source.Source;
 import java.util.Collections;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
+/**
+ * search_queries 的窄範圍唯讀版本，只給 {@code ScanScheduler}/{@code ScanService} 用
+ * （只讀 enabled=TRUE 的列 + 一個停用寫入動作）。改名跟 {@code api.searchquery.SearchQueryRepository}
+ * 那份完整 CRUD 版本區隔開，避免兩個同名類別在 IDE 全域搜尋時混淆——兩者刻意不共用
+ * （見 architecture.md D7：collector 不依賴 worker/api，讀寫語意也不同）。
+ */
 @Repository
 @RequiredArgsConstructor
-public class SearchQueryRepository {
+public class EnabledSearchQueryRepository {
 
     private final JdbcClient jdbcClient;
     private final ObjectMapper objectMapper;
@@ -23,7 +30,7 @@ public class SearchQueryRepository {
                         """)
                 .query((rs, rowNum) -> new SearchQuery(
                         rs.getLong("id"),
-                        rs.getString("source"),
+                        Source.fromValue(rs.getString("source")),
                         rs.getString("location"),
                         parseCategories(rs.getString("categories")),
                         rs.getInt("interval_minutes"),
@@ -40,13 +47,13 @@ public class SearchQueryRepository {
      * 重新啟用是純手動（把 enabled 存回 true，見 api 模組的 update()），這裡不提供
      * 自動恢復。
      */
-    public void disableAllForSource(String source, String reason) {
+    public void disableAllForSource(Source source, String reason) {
         jdbcClient.sql("""
                         UPDATE search_queries
                         SET enabled = FALSE, disabled_reason = :reason
                         WHERE source = :source
                         """)
-                .param("source", source)
+                .param("source", source.value())
                 .param("reason", reason)
                 .update();
     }

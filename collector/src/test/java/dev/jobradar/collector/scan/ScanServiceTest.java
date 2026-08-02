@@ -15,6 +15,8 @@ import static org.mockito.Mockito.when;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.jobradar.common.domain.SearchQuery;
+import dev.jobradar.common.source.Source;
+import dev.jobradar.common.repository.JobExistenceRepository;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.util.List;
@@ -40,7 +42,7 @@ class ScanServiceTest {
     private final ScrapeCursorRepository cursorRepository = mock(ScrapeCursorRepository.class);
     private final ScrapeRunRepository runRepository = mock(ScrapeRunRepository.class);
     private final JobExistenceRepository jobExistenceRepository = mock(JobExistenceRepository.class);
-    private final SearchQueryRepository searchQueryRepository = mock(SearchQueryRepository.class);
+    private final EnabledSearchQueryRepository searchQueryRepository = mock(EnabledSearchQueryRepository.class);
     private final CollectorScanProperties properties =
             new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
     @SuppressWarnings("unchecked")
@@ -51,8 +53,8 @@ class ScanServiceTest {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         JobListScraper scraper = new JobListScraper() {
             @Override
-            public String source() {
-                return "yourator";
+            public Source source() {
+                return Source.YOURATOR;
             }
 
             @Override
@@ -64,12 +66,12 @@ class ScanServiceTest {
                         1, true, 2);
             }
         };
-        when(runRepository.startRun(anyString(), anyString(), any(Instant.class))).thenReturn(1L);
+        when(runRepository.startRun(any(Source.class), anyString(), any(Instant.class))).thenReturn(1L);
 
         ScanService service = new ScanService(
                 List.of(scraper), cursorRepository, runRepository, jobExistenceRepository, searchQueryRepository,
                 properties, kafkaTemplate, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "yourator", null, List.of(), 120, true, null);
+        SearchQuery query = new SearchQuery(1, Source.YOURATOR, null, List.of(), 120, true, null);
 
         service.runScan(query);
 
@@ -96,8 +98,8 @@ class ScanServiceTest {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         JobListScraper scraper = new JobListScraper() {
             @Override
-            public String source() {
-                return "yourator";
+            public Source source() {
+                return Source.YOURATOR;
             }
 
             @Override
@@ -105,12 +107,12 @@ class ScanServiceTest {
                 throw new IllegalStateException("simulated scrape failure");
             }
         };
-        when(runRepository.startRun(anyString(), anyString(), any(Instant.class))).thenReturn(1L);
+        when(runRepository.startRun(any(Source.class), anyString(), any(Instant.class))).thenReturn(1L);
 
         ScanService service = new ScanService(
                 List.of(scraper), cursorRepository, runRepository, jobExistenceRepository, searchQueryRepository,
                 properties, kafkaTemplate, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "yourator", null, List.of(), 120, true, null);
+        SearchQuery query = new SearchQuery(1, Source.YOURATOR, null, List.of(), 120, true, null);
 
         service.runScan(query);
 
@@ -138,25 +140,25 @@ class ScanServiceTest {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         JobListScraper scraper = new JobListScraper() {
             @Override
-            public String source() {
-                return "104";
+            public Source source() {
+                return Source.JOB104;
             }
 
             @Override
             public ScanResult scan(SearchQuery query, boolean deepMode, int startPage, Predicate<Set<String>> pageIsFullyKnown) {
-                throw new dev.jobradar.common.source.SourceBlockedException("104", "104 returned 403", null);
+                throw new dev.jobradar.common.source.SourceBlockedException(Source.JOB104, "104 returned 403", null);
             }
         };
-        when(runRepository.startRun(anyString(), anyString(), any(Instant.class))).thenReturn(1L);
+        when(runRepository.startRun(any(Source.class), anyString(), any(Instant.class))).thenReturn(1L);
 
         ScanService service = new ScanService(
                 List.of(scraper), cursorRepository, runRepository, jobExistenceRepository, searchQueryRepository,
                 properties, kafkaTemplate, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "104", null, List.of("2007001016"), 120, true, null);
+        SearchQuery query = new SearchQuery(1, Source.JOB104, null, List.of("2007001016"), 120, true, null);
 
         service.runScan(query);
 
-        verify(searchQueryRepository).disableAllForSource(eq("104"), anyString());
+        verify(searchQueryRepository).disableAllForSource(eq(Source.JOB104), anyString());
         assertThat(meterRegistry.get("jobradar.scan")
                         .tag("source", "104")
                         .tag("result", "failure")
@@ -176,8 +178,8 @@ class ScanServiceTest {
         when(cursorRepository.findLastDeepScanCompletedAt(1L)).thenReturn(Optional.of(Instant.now()));
         JobListScraper scraper = new JobListScraper() {
             @Override
-            public String source() {
-                return "yourator";
+            public Source source() {
+                return Source.YOURATOR;
             }
 
             @Override
@@ -187,12 +189,12 @@ class ScanServiceTest {
                 return new ScanResult(List.of(new DiscoveredJob("1", "http://example.com/1", payload)), 1, true, 2);
             }
         };
-        when(runRepository.startRun(anyString(), anyString(), any(Instant.class))).thenReturn(1L);
+        when(runRepository.startRun(any(Source.class), anyString(), any(Instant.class))).thenReturn(1L);
 
         ScanService service = new ScanService(
                 List.of(scraper), cursorRepository, runRepository, jobExistenceRepository, searchQueryRepository,
                 properties, kafkaTemplate, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "yourator", null, List.of(), 120, true, null);
+        SearchQuery query = new SearchQuery(1, Source.YOURATOR, null, List.of(), 120, true, null);
 
         service.runScan(query);
 
@@ -210,8 +212,8 @@ class ScanServiceTest {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         JobListScraper scraper = new JobListScraper() {
             @Override
-            public String source() {
-                return "yourator";
+            public Source source() {
+                return Source.YOURATOR;
             }
 
             @Override
@@ -221,12 +223,12 @@ class ScanServiceTest {
                 return new ScanResult(List.of(new DiscoveredJob("1", "http://example.com/1", payload)), 3, true, 4);
             }
         };
-        when(runRepository.startRun(anyString(), anyString(), any(Instant.class))).thenReturn(1L);
+        when(runRepository.startRun(any(Source.class), anyString(), any(Instant.class))).thenReturn(1L);
 
         ScanService service = new ScanService(
                 List.of(scraper), cursorRepository, runRepository, jobExistenceRepository, searchQueryRepository,
                 properties, kafkaTemplate, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "yourator", null, List.of(), 120, true, null);
+        SearchQuery query = new SearchQuery(1, Source.YOURATOR, null, List.of(), 120, true, null);
 
         service.runScan(query);
 
@@ -242,8 +244,8 @@ class ScanServiceTest {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         JobListScraper scraper = new JobListScraper() {
             @Override
-            public String source() {
-                return "yourator";
+            public Source source() {
+                return Source.YOURATOR;
             }
 
             @Override
@@ -251,12 +253,12 @@ class ScanServiceTest {
                 return new ScanResult(List.of(), 2, false, 7);
             }
         };
-        when(runRepository.startRun(anyString(), anyString(), any(Instant.class))).thenReturn(1L);
+        when(runRepository.startRun(any(Source.class), anyString(), any(Instant.class))).thenReturn(1L);
 
         ScanService service = new ScanService(
                 List.of(scraper), cursorRepository, runRepository, jobExistenceRepository, searchQueryRepository,
                 properties, kafkaTemplate, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "yourator", null, List.of(), 120, true, null);
+        SearchQuery query = new SearchQuery(1, Source.YOURATOR, null, List.of(), 120, true, null);
 
         service.runScan(query);
 

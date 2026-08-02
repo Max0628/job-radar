@@ -20,7 +20,7 @@ public class ScanScheduler {
     private static final Logger log = LoggerFactory.getLogger(ScanScheduler.class);
     private static final ZoneId TARGET_TIMEZONE = ZoneId.of("Asia/Taipei");
 
-    private final SearchQueryRepository searchQueryRepository;
+    private final EnabledSearchQueryRepository searchQueryRepository;
     private final ScrapeCursorRepository cursorRepository;
     private final ScanService scanService;
     private final CollectorScanProperties properties;

@@ -1,8 +1,11 @@
 package dev.jobradar.collector.scan;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
+import lombok.Value;
+import lombok.experimental.Accessors;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -18,35 +21,48 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * deepScanIntervalHours：距離上次深掃完成超過這個時數，這輪就跑深掃模式，否則跑淺掃
  * （見 architecture.md D6）。deepScanMaxDurationMinutes：深掃自己的單次時間預算，比淺掃
  * 的 maxScanDurationMinutes 更寬，降低需要跨天接續的次數。
+ *
+ * {@code @Value} 單一全參數建構子：Spring Boot 3.x 對 {@code @ConfigurationProperties}
+ * 的 constructor binding 只需要「唯一一個建構子」，不需要 Jackson 介入（跟 record 換
+ * 掉前的綁定機制相同，見 collector application.yml 的 collector.scan.* 設定）。
+ *
+ * {@code @JsonAutoDetect(fieldVisibility = ANY)}：fluent 存取方法 Jackson 序列化時看不到，
+ * actuator 的 `/actuator/configprops` 端點會用 Jackson 序列化所有 `@ConfigurationProperties`
+ * 類別，不加這個會在那個端點顯示成空物件（見 SearchQuery.java 的說明）。
  */
 @ConfigurationProperties(prefix = "collector.scan")
-public record CollectorScanProperties(
-        long tickIntervalMillis,
-        int jitterSeconds,
-        String userAgent,
-        long requestIntervalMillis,
-        int activeHoursStart,
-        int activeHoursEnd,
-        int maxRetry,
-        long maxScanDurationMinutes,
-        long retryBackoffBaseMillis,
-        int deepScanIntervalHours,
-        long deepScanMaxDurationMinutes,
-        Map<String, SourceOverrides> sources
-) {
+@Value
+@Accessors(fluent = true)
+@JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+public class CollectorScanProperties {
+    long tickIntervalMillis;
+    int jitterSeconds;
+    String userAgent;
+    long requestIntervalMillis;
+    int activeHoursStart;
+    int activeHoursEnd;
+    int maxRetry;
+    long maxScanDurationMinutes;
+    long retryBackoffBaseMillis;
+    int deepScanIntervalHours;
+    long deepScanMaxDurationMinutes;
+    Map<String, SourceOverrides> sources;
+
     /**
      * requestIntervalMinMillis/requestIntervalMaxMillis：104 需要「3–10 秒隨機區間」
      * 這種比 Yourator/CakeResume 固定單一間隔更保守的節流（見 architecture.md D19），
      * 兩者皆非 null 時才生效，否則退回全域固定的 requestIntervalMillis。
      */
-    public record SourceOverrides(
-            Integer maxRetry,
-            Long maxScanDurationMinutes,
-            Long retryBackoffBaseMillis,
-            Long deepScanMaxDurationMinutes,
-            Long requestIntervalMinMillis,
-            Long requestIntervalMaxMillis
-    ) {
+    @Value
+    @Accessors(fluent = true)
+    @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+    public static class SourceOverrides {
+        Integer maxRetry;
+        Long maxScanDurationMinutes;
+        Long retryBackoffBaseMillis;
+        Long deepScanMaxDurationMinutes;
+        Long requestIntervalMinMillis;
+        Long requestIntervalMaxMillis;
     }
 
     private SourceOverrides overridesFor(String source) {

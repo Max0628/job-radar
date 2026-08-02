@@ -9,6 +9,7 @@ import dev.jobradar.collector.scan.JobListScraper;
 import dev.jobradar.collector.scan.ScanResult;
 import dev.jobradar.common.domain.SearchQuery;
 import dev.jobradar.common.source.CakeResumeEndpoints;
+import dev.jobradar.common.source.Source;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
@@ -50,7 +51,7 @@ import org.springframework.web.client.RestClient;
 public class CakeResumeListScraper implements JobListScraper {
 
     private static final Logger log = LoggerFactory.getLogger(CakeResumeListScraper.class);
-    private static final String SOURCE = "cakeresume";
+    private static final Source SOURCE = Source.CAKERESUME;
     // CakeResume API 沒有讓我們指定每頁筆數的參數，觀察到的預設值是 20
     private static final int PAGE_SIZE = 20;
     // 平台硬限制：page * PAGE_SIZE 達到這個值就直接 400，不管 total_entries 講多少
@@ -84,13 +85,13 @@ public class CakeResumeListScraper implements JobListScraper {
     }
 
     @Override
-    public String source() {
+    public Source source() {
         return SOURCE;
     }
 
     @Override
     public ScanResult scan(SearchQuery query, boolean deepMode, int startPage, Predicate<Set<String>> pageIsFullyKnown) {
-        Duration maxScanDuration = properties.maxScanDurationFor(SOURCE, deepMode);
+        Duration maxScanDuration = properties.maxScanDurationFor(SOURCE.value(), deepMode);
         List<DiscoveredJob> discovered = new ArrayList<>();
         Set<String> previousPageIds = null;
         Instant deadline = Instant.now().plus(maxScanDuration);
@@ -105,7 +106,7 @@ public class CakeResumeListScraper implements JobListScraper {
                 log.warn("CakeResume scan exceeded {} time budget at page={} for query id={}, "
                                 + "stopping with {} jobs already discovered",
                         maxScanDuration, page, query.id(), discovered.size());
-                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE, "reason", "timeout").increment();
+                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE.value(), "reason", "timeout").increment();
                 return new ScanResult(discovered, pagesScanned, false, page);
             }
 
@@ -137,7 +138,7 @@ public class CakeResumeListScraper implements JobListScraper {
                 log.warn("CakeResume page={} returned identical job set to previous page for query id={}, "
                                 + "stopping (pagination appears stuck)",
                         page, query.id());
-                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE, "reason", "duplicate_page")
+                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE.value(), "reason", "duplicate_page")
                         .increment();
                 return new ScanResult(discovered, pagesScanned, true, page);
             }
@@ -169,7 +170,7 @@ public class CakeResumeListScraper implements JobListScraper {
                                     + "page={} with {} jobs discovered for query id={}",
                             totalEntries, PAGE_SIZE, MAX_REACHABLE_ENTRIES, page, discovered.size(),
                             query.id());
-                    meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE,
+                    meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE.value(),
                             "reason", "page_limit_exceeded").increment();
                 }
                 return new ScanResult(discovered, pagesScanned, true, page + 1);
@@ -181,8 +182,8 @@ public class CakeResumeListScraper implements JobListScraper {
     }
 
     private JsonNode searchPage(String location, List<String> professions, int page) {
-        int maxRetry = properties.maxRetryFor(SOURCE);
-        long backoffBaseMillis = properties.retryBackoffBaseMillisFor(SOURCE);
+        int maxRetry = properties.maxRetryFor(SOURCE.value());
+        long backoffBaseMillis = properties.retryBackoffBaseMillisFor(SOURCE.value());
         int attempt = 0;
         while (true) {
             attempt++;
@@ -223,10 +224,10 @@ public class CakeResumeListScraper implements JobListScraper {
             } catch (HttpClientErrorException.Forbidden | HttpServerErrorException.ServiceUnavailable e) {
                 // 疑似風控相關（見 architecture.md D19）：不重試，直接失敗——對這類錯誤
                 // 重試只會浪費請求、拉高被判定高風險的機率，跟 429/逾時的處理原則不同
-                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE, "reason", "blocked").increment();
+                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE.value(), "reason", "blocked").increment();
                 throw new IllegalStateException("CakeResume returned " + e.getStatusCode() + " for page " + page, e);
             } catch (HttpClientErrorException.TooManyRequests e) {
-                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE, "reason", "rate_limited").increment();
+                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE.value(), "reason", "rate_limited").increment();
                 if (attempt >= maxRetry) {
                     throw new IllegalStateException("CakeResume rate limited after " + maxRetry + " retries", e);
                 }
@@ -237,7 +238,7 @@ public class CakeResumeListScraper implements JobListScraper {
                 // 連線/讀取逾時等 I/O 層級的偶發問題，跟 429 一樣值得重試——沒有頁數上限
                 // 之後一輪掃描要打的請求數變多，偶發逾時的機率也跟著變高（見建構子註解），
                 // 沒有這個重試的話，任何一次偶發逾時就會讓整輪掃描全部作廢
-                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE, "reason", "io_timeout").increment();
+                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE.value(), "reason", "io_timeout").increment();
                 if (attempt >= maxRetry) {
                     throw new IllegalStateException(
                             "CakeResume request failed after " + maxRetry + " retries (page " + page + ")", e);

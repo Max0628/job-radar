@@ -1,8 +1,11 @@
 package dev.jobradar.collector.scan;
 
+import dev.jobradar.common.domain.ScanMode;
 import dev.jobradar.common.domain.SearchQuery;
 import dev.jobradar.common.envelope.DiscoveredEnvelope;
 import dev.jobradar.common.kafka.Topics;
+import dev.jobradar.common.repository.JobExistenceRepository;
+import dev.jobradar.common.source.Source;
 import dev.jobradar.common.source.SourceBlockedException;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -12,7 +15,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
@@ -23,11 +25,11 @@ public class ScanService {
 
     private static final Logger log = LoggerFactory.getLogger(ScanService.class);
 
-    private final Map<String, JobListScraper> scrapersBySource;
+    private final Map<Source, JobListScraper> scrapersBySource;
     private final ScrapeCursorRepository cursorRepository;
     private final ScrapeRunRepository runRepository;
     private final JobExistenceRepository jobExistenceRepository;
-    private final SearchQueryRepository searchQueryRepository;
+    private final EnabledSearchQueryRepository searchQueryRepository;
     private final CollectorScanProperties properties;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final MeterRegistry meterRegistry;
@@ -37,12 +39,12 @@ public class ScanService {
             ScrapeCursorRepository cursorRepository,
             ScrapeRunRepository runRepository,
             JobExistenceRepository jobExistenceRepository,
-            SearchQueryRepository searchQueryRepository,
+            EnabledSearchQueryRepository searchQueryRepository,
             CollectorScanProperties properties,
             KafkaTemplate<String, Object> kafkaTemplate,
             MeterRegistry meterRegistry
     ) {
-        this.scrapersBySource = scrapers.stream().collect(Collectors.toMap(JobListScraper::source, s -> s));
+        this.scrapersBySource = Source.indexBy(scrapers, JobListScraper::source);
         this.cursorRepository = cursorRepository;
         this.runRepository = runRepository;
         this.jobExistenceRepository = jobExistenceRepository;
@@ -101,13 +103,13 @@ public class ScanService {
                 cursorRepository.updateAfterLightScan(query.id(), scrapedAt);
             }
             runRepository.finishRunSuccess(runId, Instant.now(), result.pagesScanned(), result.discovered().size(),
-                    deepMode ? "deep" : "light", !result.reachedEnd());
+                    deepMode ? ScanMode.DEEP : ScanMode.LIGHT, !result.reachedEnd());
 
-            meterRegistry.counter("jobradar.scan", "source", query.source(), "result", "success").increment();
-            meterRegistry.counter("jobradar.jobs.discovered", "source", query.source())
+            meterRegistry.counter("jobradar.scan", "source", query.source().value(), "result", "success").increment();
+            meterRegistry.counter("jobradar.jobs.discovered", "source", query.source().value())
                     .increment(result.discovered().size());
             sample.stop(Timer.builder("jobradar.scan.duration")
-                    .tag("source", query.source())
+                    .tag("source", query.source().value())
                     .register(meterRegistry));
 
             log.info("Scan finished source={} categories={} pages={} jobsDiscovered={}",
@@ -126,11 +128,11 @@ public class ScanService {
         }
     }
 
-    private void recordFailure(long runId, String source, Timer.Sample sample, Exception e) {
+    private void recordFailure(long runId, Source source, Timer.Sample sample, Exception e) {
         runRepository.finishRunFailed(runId, Instant.now(), e.getMessage());
-        meterRegistry.counter("jobradar.scan", "source", source, "result", "failure").increment();
+        meterRegistry.counter("jobradar.scan", "source", source.value(), "result", "failure").increment();
         sample.stop(Timer.builder("jobradar.scan.duration")
-                .tag("source", source)
+                .tag("source", source.value())
                 .register(meterRegistry));
     }
 

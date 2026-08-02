@@ -1,5 +1,7 @@
 package dev.jobradar.collector.scan;
 
+import dev.jobradar.common.domain.ScanMode;
+import dev.jobradar.common.source.Source;
 import java.sql.Timestamp;
 import java.time.Instant;
 import lombok.RequiredArgsConstructor;
@@ -12,13 +14,13 @@ public class ScrapeRunRepository {
 
     private final JdbcClient jdbcClient;
 
-    public long startRun(String source, String queryCategories, Instant startedAt) {
+    public long startRun(Source source, String queryCategories, Instant startedAt) {
         return jdbcClient.sql("""
                         INSERT INTO scrape_runs (source, query_categories, started_at, status)
                         VALUES (:source, :queryCategories, :startedAt, 'running')
                         RETURNING id
                         """)
-                .param("source", source)
+                .param("source", source.value())
                 .param("queryCategories", queryCategories)
                 .param("startedAt", Timestamp.from(startedAt))
                 .query(Long.class)
@@ -27,10 +29,10 @@ public class ScrapeRunRepository {
 
     /**
      * scanMode/terminatedEarly 供掃描摘要回報用（見 architecture.md D21）：
-     * scanMode 是 "light"/"deep"，terminatedEarly 對應 {@code !ScanResult.reachedEnd()}。
+     * terminatedEarly 對應 {@code !ScanResult.reachedEnd()}。
      */
     public void finishRunSuccess(long runId, Instant finishedAt, int pagesScanned, int jobsSeen,
-            String scanMode, boolean terminatedEarly) {
+            ScanMode scanMode, boolean terminatedEarly) {
         jdbcClient.sql("""
                         UPDATE scrape_runs
                         SET finished_at = :finishedAt, pages_scanned = :pagesScanned,
@@ -41,7 +43,7 @@ public class ScrapeRunRepository {
                 .param("finishedAt", Timestamp.from(finishedAt))
                 .param("pagesScanned", pagesScanned)
                 .param("jobsSeen", jobsSeen)
-                .param("scanMode", scanMode)
+                .param("scanMode", scanMode.dbValue())
                 .param("terminatedEarly", terminatedEarly)
                 .param("id", runId)
                 .update();

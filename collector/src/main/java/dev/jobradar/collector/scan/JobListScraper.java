@@ -1,6 +1,7 @@
 package dev.jobradar.collector.scan;
 
 import dev.jobradar.common.domain.SearchQuery;
+import dev.jobradar.common.source.Source;
 import java.util.Set;
 import java.util.function.Predicate;
 
@@ -12,7 +13,7 @@ import java.util.function.Predicate;
  */
 public interface JobListScraper {
 
-    String source();
+    Source source();
 
     /**
      * @param deepMode 見 architecture.md D6：true 時關閉早停、一定要翻到真的沒有下一頁；

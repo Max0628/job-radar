@@ -8,6 +8,7 @@ import dev.jobradar.collector.scan.JobListScraper;
 import dev.jobradar.collector.scan.ScanResult;
 import dev.jobradar.common.domain.SearchQuery;
 import dev.jobradar.common.source.Job104Endpoints;
+import dev.jobradar.common.source.Source;
 import dev.jobradar.common.source.SourceBlockedException;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Duration;
@@ -45,7 +46,7 @@ import org.springframework.web.client.RestClient;
 public class Job104ListScraper implements JobListScraper {
 
     private static final Logger log = LoggerFactory.getLogger(Job104ListScraper.class);
-    private static final String SOURCE = "104";
+    private static final Source SOURCE = Source.JOB104;
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -74,13 +75,13 @@ public class Job104ListScraper implements JobListScraper {
     }
 
     @Override
-    public String source() {
+    public Source source() {
         return SOURCE;
     }
 
     @Override
     public ScanResult scan(SearchQuery query, boolean deepMode, int startPage, Predicate<Set<String>> pageIsFullyKnown) {
-        Duration maxScanDuration = properties.maxScanDurationFor(SOURCE, deepMode);
+        Duration maxScanDuration = properties.maxScanDurationFor(SOURCE.value(), deepMode);
         List<DiscoveredJob> discovered = new ArrayList<>();
         Set<String> previousPageIds = null;
         Instant deadline = Instant.now().plus(maxScanDuration);
@@ -95,7 +96,7 @@ public class Job104ListScraper implements JobListScraper {
                 log.warn("104 scan exceeded {} time budget at page={} for query id={}, "
                                 + "stopping with {} jobs already discovered",
                         maxScanDuration, page, query.id(), discovered.size());
-                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE, "reason", "timeout").increment();
+                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE.value(), "reason", "timeout").increment();
                 return new ScanResult(discovered, pagesScanned, false, page);
             }
 
@@ -119,7 +120,7 @@ public class Job104ListScraper implements JobListScraper {
                 log.warn("104 page={} returned identical job set to previous page for query id={}, "
                                 + "stopping (pagination appears stuck)",
                         page, query.id());
-                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE, "reason", "duplicate_page")
+                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE.value(), "reason", "duplicate_page")
                         .increment();
                 return new ScanResult(discovered, pagesScanned, true, page);
             }
@@ -146,13 +147,13 @@ public class Job104ListScraper implements JobListScraper {
             }
 
             page++;
-            sleep(properties.requestIntervalMillisFor(SOURCE));
+            sleep(properties.requestIntervalMillisFor(SOURCE.value()));
         }
     }
 
     private JsonNode fetchPage(String areaCode, List<String> jobCategories, int page) {
-        int maxRetry = properties.maxRetryFor(SOURCE);
-        long backoffBaseMillis = properties.retryBackoffBaseMillisFor(SOURCE);
+        int maxRetry = properties.maxRetryFor(SOURCE.value());
+        long backoffBaseMillis = properties.retryBackoffBaseMillisFor(SOURCE.value());
         int attempt = 0;
         while (true) {
             attempt++;
@@ -179,10 +180,10 @@ public class Job104ListScraper implements JobListScraper {
                 // 對這類錯誤重試只會浪費請求、拉高被判定高風險的機率，跟 429/逾時的
                 // 處理原則不同。拋專用例外（而非 IllegalStateException）讓 ScanService
                 // 能專門對這個情況觸發自動停用（見 add-104-source/design.md「自動關閉」決策）
-                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE, "reason", "blocked").increment();
+                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE.value(), "reason", "blocked").increment();
                 throw new SourceBlockedException(SOURCE, "104 returned " + e.getStatusCode() + " for page " + page, e);
             } catch (HttpClientErrorException.TooManyRequests e) {
-                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE, "reason", "rate_limited").increment();
+                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE.value(), "reason", "rate_limited").increment();
                 if (attempt >= maxRetry) {
                     throw new IllegalStateException("104 rate limited after " + maxRetry + " retries", e);
                 }
@@ -191,7 +192,7 @@ public class Job104ListScraper implements JobListScraper {
                 sleep(backoffMillis);
             } catch (ResourceAccessException e) {
                 // 連線/讀取逾時等 I/O 層級的偶發問題，跟 429 一樣值得重試
-                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE, "reason", "io_timeout").increment();
+                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE.value(), "reason", "io_timeout").increment();
                 if (attempt >= maxRetry) {
                     throw new IllegalStateException(
                             "104 request failed after " + maxRetry + " retries (page " + page + ")", e);

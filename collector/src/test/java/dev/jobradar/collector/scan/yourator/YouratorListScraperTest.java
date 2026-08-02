@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.jobradar.collector.scan.CollectorScanProperties;
 import dev.jobradar.collector.scan.ScanResult;
 import dev.jobradar.common.domain.SearchQuery;
+import dev.jobradar.common.source.Source;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
@@ -41,7 +42,7 @@ class YouratorListScraperTest {
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder, new SimpleMeterRegistry());
-        SearchQuery query = new SearchQuery(1, "yourator", "TPE", List.of(), 120, true, null);
+        SearchQuery query = new SearchQuery(1, Source.YOURATOR, "TPE", List.of(), 120, true, null);
 
         ScanResult result = scraper.scan(query, false, 1, ids -> false);
 
@@ -74,7 +75,7 @@ class YouratorListScraperTest {
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "yourator", "TPE", List.of(), 120, true, null);
+        SearchQuery query = new SearchQuery(1, Source.YOURATOR, "TPE", List.of(), 120, true, null);
 
         ScanResult result = scraper.scan(query, false, 1, ids -> false);
 
@@ -103,7 +104,7 @@ class YouratorListScraperTest {
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "yourator", "TPE", List.of(), 120, true, null);
+        SearchQuery query = new SearchQuery(1, Source.YOURATOR, "TPE", List.of(), 120, true, null);
 
         scraper.scan(query, false, 1, ids -> false);
 
@@ -137,7 +138,7 @@ class YouratorListScraperTest {
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "yourator", "TPE", List.of(), 120, true, null);
+        SearchQuery query = new SearchQuery(1, Source.YOURATOR, "TPE", List.of(), 120, true, null);
 
         ScanResult result = scraper.scan(query, false, 1, ids -> false);
 
@@ -166,7 +167,7 @@ class YouratorListScraperTest {
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder, new SimpleMeterRegistry());
-        SearchQuery query = new SearchQuery(1, "yourator", "TPE", List.of(), 120, true, null);
+        SearchQuery query = new SearchQuery(1, Source.YOURATOR, "TPE", List.of(), 120, true, null);
 
         ScanResult result = scraper.scan(query, false, 1, ids -> true);
 
@@ -190,7 +191,7 @@ class YouratorListScraperTest {
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder, new SimpleMeterRegistry());
-        SearchQuery query = new SearchQuery(1, "yourator", "TPE", List.of(), 120, true, null);
+        SearchQuery query = new SearchQuery(1, Source.YOURATOR, "TPE", List.of(), 120, true, null);
 
         ScanResult result = scraper.scan(query, true, 3, ids -> false);
 
@@ -210,7 +211,7 @@ class YouratorListScraperTest {
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 0, 2000, 24, 0, Map.of());
         YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder, new SimpleMeterRegistry());
-        SearchQuery query = new SearchQuery(1, "yourator", "TPE", List.of(), 120, true, null);
+        SearchQuery query = new SearchQuery(1, Source.YOURATOR, "TPE", List.of(), 120, true, null);
 
         ScanResult result = scraper.scan(query, true, 5, ids -> false);
 
@@ -235,7 +236,7 @@ class YouratorListScraperTest {
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "yourator", "TPE", List.of(), 120, true, null);
+        SearchQuery query = new SearchQuery(1, Source.YOURATOR, "TPE", List.of(), 120, true, null);
 
         assertThatThrownBy(() -> scraper.scan(query, false, 1, ids -> false))
                 .isInstanceOf(IllegalStateException.class);
@@ -260,7 +261,7 @@ class YouratorListScraperTest {
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         YouratorListScraper scraper = new YouratorListScraper(properties, new ObjectMapper(), builder, meterRegistry);
-        SearchQuery query = new SearchQuery(1, "yourator", "TPE", List.of(), 120, true, null);
+        SearchQuery query = new SearchQuery(1, Source.YOURATOR, "TPE", List.of(), 120, true, null);
 
         assertThatThrownBy(() -> scraper.scan(query, false, 1, ids -> false))
                 .isInstanceOf(IllegalStateException.class);
