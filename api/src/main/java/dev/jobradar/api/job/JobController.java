@@ -4,6 +4,7 @@ import dev.jobradar.api.favorite.FavoriteRepository;
 import dev.jobradar.common.domain.Job;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,15 +20,11 @@ import org.springframework.web.server.ResponseStatusException;
  * （見 dashboard-frontend spec 的「唯讀」scenario）。
  */
 @RestController
+@RequiredArgsConstructor
 public class JobController {
 
     private final JobRepository jobRepository;
     private final FavoriteRepository favoriteRepository;
-
-    public JobController(JobRepository jobRepository, FavoriteRepository favoriteRepository) {
-        this.jobRepository = jobRepository;
-        this.favoriteRepository = favoriteRepository;
-    }
 
     @GetMapping("/api/jobs")
     public ResponseEntity<List<JobResponse>> list(

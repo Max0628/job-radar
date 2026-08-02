@@ -4,19 +4,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.jobradar.common.domain.SearchQuery;
 import java.util.Collections;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 @Repository
+@RequiredArgsConstructor
 public class SearchQueryRepository {
 
     private final JdbcClient jdbcClient;
     private final ObjectMapper objectMapper;
-
-    public SearchQueryRepository(JdbcClient jdbcClient, ObjectMapper objectMapper) {
-        this.jdbcClient = jdbcClient;
-        this.objectMapper = objectMapper;
-    }
 
     public List<SearchQuery> findAllEnabled() {
         return jdbcClient.sql("""

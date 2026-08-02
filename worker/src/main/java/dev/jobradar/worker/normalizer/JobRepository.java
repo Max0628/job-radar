@@ -4,17 +4,15 @@ import dev.jobradar.common.db.PgJson;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 @Repository
+@RequiredArgsConstructor
 public class JobRepository {
 
     private final JdbcClient jdbcClient;
-
-    public JobRepository(JdbcClient jdbcClient) {
-        this.jdbcClient = jdbcClient;
-    }
 
     /**
      * 查目前 `jobs` 表上這筆職缺的 content_hash，供 normalizer 判斷內容是否真的變了

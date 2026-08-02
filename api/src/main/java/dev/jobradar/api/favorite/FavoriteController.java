@@ -3,6 +3,7 @@ package dev.jobradar.api.favorite;
 import dev.jobradar.common.domain.Favorite;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -21,13 +22,10 @@ import org.springframework.web.server.ResponseStatusException;
  * 會直接丟例外，一旦之後真的想加「我的收藏」頁面，這裡不用再回頭補。
  */
 @RestController
+@RequiredArgsConstructor
 public class FavoriteController {
 
     private final FavoriteRepository repository;
-
-    public FavoriteController(FavoriteRepository repository) {
-        this.repository = repository;
-    }
 
     @GetMapping("/api/favorites")
     public ResponseEntity<List<Favorite>> list() {

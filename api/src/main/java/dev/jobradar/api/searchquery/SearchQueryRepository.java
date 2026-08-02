@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Repository;
  * （給 Scheduler 用），這份是 api 模組專用的完整讀寫版本，兩者刻意不共用，因為讀寫語意不同。
  */
 @Repository
+@RequiredArgsConstructor
 public class SearchQueryRepository {
 
     // 白名單排序欄位，避免把使用者輸入直接接進 SQL ORDER BY 造成注入風險
@@ -32,11 +34,6 @@ public class SearchQueryRepository {
 
     private final JdbcClient jdbcClient;
     private final ObjectMapper objectMapper;
-
-    public SearchQueryRepository(JdbcClient jdbcClient, ObjectMapper objectMapper) {
-        this.jdbcClient = jdbcClient;
-        this.objectMapper = objectMapper;
-    }
 
     public List<SearchQuery> findAll(int start, int end, String sort, String order) {
         String column = SORTABLE_COLUMNS.getOrDefault(sort, "id");

@@ -3,17 +3,15 @@ package dev.jobradar.worker.normalizer;
 import dev.jobradar.common.db.PgJson;
 import java.sql.Timestamp;
 import java.time.Instant;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 @Repository
+@RequiredArgsConstructor
 public class RawDocumentRepository {
 
     private final JdbcClient jdbcClient;
-
-    public RawDocumentRepository(JdbcClient jdbcClient) {
-        this.jdbcClient = jdbcClient;
-    }
 
     public void insertIgnore(String source, String sourceJobId, Instant fetchedAt, String payloadJson) {
         jdbcClient.sql("""

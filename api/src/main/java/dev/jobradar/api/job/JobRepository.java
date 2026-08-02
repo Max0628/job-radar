@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Repository;
  * add-job-dashboard/specs/job-browse-api）。不提供寫入——職缺資料只能由爬蟲管線寫入。
  */
 @Repository
+@RequiredArgsConstructor
 public class JobRepository {
 
     private static final Map<String, String> SORTABLE_COLUMNS = Map.of(
@@ -29,10 +31,6 @@ public class JobRepository {
     );
 
     private final JdbcClient jdbcClient;
-
-    public JobRepository(JdbcClient jdbcClient) {
-        this.jdbcClient = jdbcClient;
-    }
 
     public List<Job> search(JobSearchFilter filter, int start, int end, String sort, String order) {
         WhereClause where = buildWhereClause(filter);

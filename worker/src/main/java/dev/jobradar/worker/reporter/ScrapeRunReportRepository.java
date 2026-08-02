@@ -3,6 +3,7 @@ package dev.jobradar.worker.reporter;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -12,13 +13,10 @@ import org.springframework.stereotype.Repository;
  * 且失敗另外走 source-error-alerting 的告警路徑，不是這裡的範圍。
  */
 @Repository
+@RequiredArgsConstructor
 public class ScrapeRunReportRepository {
 
     private final JdbcClient jdbcClient;
-
-    public ScrapeRunReportRepository(JdbcClient jdbcClient) {
-        this.jdbcClient = jdbcClient;
-    }
 
     public List<UnreportedScrapeRun> findUnreportedFinishedRuns(Instant before) {
         return jdbcClient.sql("""

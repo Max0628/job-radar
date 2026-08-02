@@ -1,5 +1,6 @@
 package dev.jobradar.worker.fetcher;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -10,13 +11,10 @@ import org.springframework.stereotype.Repository;
  * SearchQueryRepository（worker 對 search_queries 表本來就沒有任何讀取需求）。
  */
 @Repository
+@RequiredArgsConstructor
 public class SearchQueryDisableRepository {
 
     private final JdbcClient jdbcClient;
-
-    public SearchQueryDisableRepository(JdbcClient jdbcClient) {
-        this.jdbcClient = jdbcClient;
-    }
 
     public void disableAllForSource(String source, String reason) {
         jdbcClient.sql("""

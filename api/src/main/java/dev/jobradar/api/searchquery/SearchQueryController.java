@@ -3,6 +3,7 @@ package dev.jobradar.api.searchquery;
 import dev.jobradar.common.domain.SearchQuery;
 import java.util.List;
 import java.util.Map;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,13 +23,10 @@ import org.springframework.web.server.ResponseStatusException;
  * React Admin：_start/_end/_sort/_order + X-Total-Count header。
  */
 @RestController
+@RequiredArgsConstructor
 public class SearchQueryController {
 
     private final SearchQueryRepository repository;
-
-    public SearchQueryController(SearchQueryRepository repository) {
-        this.repository = repository;
-    }
 
     @GetMapping("/api/search-queries")
     public ResponseEntity<List<SearchQuery>> list(

@@ -2,17 +2,15 @@ package dev.jobradar.collector.scan;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 @Repository
+@RequiredArgsConstructor
 public class ScrapeRunRepository {
 
     private final JdbcClient jdbcClient;
-
-    public ScrapeRunRepository(JdbcClient jdbcClient) {
-        this.jdbcClient = jdbcClient;
-    }
 
     public long startRun(String source, String queryCategories, Instant startedAt) {
         return jdbcClient.sql("""

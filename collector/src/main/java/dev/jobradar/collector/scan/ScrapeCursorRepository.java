@@ -3,17 +3,15 @@ package dev.jobradar.collector.scan;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 @Repository
+@RequiredArgsConstructor
 public class ScrapeCursorRepository {
 
     private final JdbcClient jdbcClient;
-
-    public ScrapeCursorRepository(JdbcClient jdbcClient) {
-        this.jdbcClient = jdbcClient;
-    }
 
     public Optional<Instant> findLastScannedAt(long searchQueryId) {
         return jdbcClient.sql("SELECT last_scanned_at FROM scrape_cursors WHERE search_query_id = :searchQueryId")

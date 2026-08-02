@@ -1,5 +1,6 @@
 package dev.jobradar.api.facets;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
@@ -11,13 +12,10 @@ import org.springframework.web.bind.annotation.RestController;
  * 放在那邊前端根本連不到。
  */
 @RestController
+@RequiredArgsConstructor
 public class FacetsController {
 
     private final FacetsService facetsService;
-
-    public FacetsController(FacetsService facetsService) {
-        this.facetsService = facetsService;
-    }
 
     @GetMapping("/api/sources/{source}/facets")
     public SourceFacets facets(@PathVariable String source) {

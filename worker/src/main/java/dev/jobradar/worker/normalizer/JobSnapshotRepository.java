@@ -2,17 +2,15 @@ package dev.jobradar.worker.normalizer;
 
 import java.sql.Timestamp;
 import java.time.Instant;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 @Repository
+@RequiredArgsConstructor
 public class JobSnapshotRepository {
 
     private final JdbcClient jdbcClient;
-
-    public JobSnapshotRepository(JdbcClient jdbcClient) {
-        this.jdbcClient = jdbcClient;
-    }
 
     /**
      * Append-only，重複訊息（同一秒內重放）以 (source, source_job_id, scraped_at) 唯一鍵擋下，

@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -14,13 +15,10 @@ import org.springframework.stereotype.Repository;
  * favorites 表的存取（見 add-job-dashboard/specs/job-favorites）。單使用者，不需要 user_id。
  */
 @Repository
+@RequiredArgsConstructor
 public class FavoriteRepository {
 
     private final JdbcClient jdbcClient;
-
-    public FavoriteRepository(JdbcClient jdbcClient) {
-        this.jdbcClient = jdbcClient;
-    }
 
     public List<Favorite> findAll() {
         return jdbcClient.sql("""

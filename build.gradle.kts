@@ -23,6 +23,17 @@ subprojects {
         }
     }
 
+    configurations {
+        compileOnly {
+            extendsFrom(configurations["annotationProcessor"])
+        }
+    }
+
+    dependencies {
+        compileOnly("org.projectlombok:lombok")
+        annotationProcessor("org.projectlombok:lombok")
+    }
+
     tasks.withType<Test> {
         useJUnitPlatform {
             // 見 .gitlab-ci.yml：CI 的 Runner 用 Kubernetes executor 跑 job，沒有 Docker daemon
