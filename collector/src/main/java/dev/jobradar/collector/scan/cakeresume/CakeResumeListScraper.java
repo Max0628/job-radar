@@ -38,12 +38,23 @@ import org.springframework.web.client.RestClient;
  * 刻意不設頁數上限（見 add-crawl-improvements design.md），改用兩個安全網，理由與
  * YouratorListScraper 相同（見該類別註解）：單輪掃描時間上限 + 前後兩頁職缺集合完全
  * 相同時視為分頁卡住。兩者都不當作失敗，只記警告 + anomaly 計數器。
+ *
+ * 平台另有一個 {@code total_entries} 完全不會反映的隱性限制：{@code page * 每頁筆數}
+ * 達到 2000 時 API 直接回 400（"Search range is too large"），不管 total_entries
+ * 講的總數是多少（2026-08-02 事故：13 個 profession 加總後的結果數超過 2000，深掃
+ * 翻到 page 101 就卡死，見 expand-source-failure-auto-disable 對話紀錄）。跟 104
+ * 的 lastPage 不同，CakeResume 沒有任何欄位誠實告知這個上限，只能從錯誤訊息反推、
+ * 寫死成常數，翻頁迴圈主動算到會超過上限就停止，不要真的送出那個註定失敗的請求。
  */
 @Component
 public class CakeResumeListScraper implements JobListScraper {
 
     private static final Logger log = LoggerFactory.getLogger(CakeResumeListScraper.class);
     private static final String SOURCE = "cakeresume";
+    // CakeResume API 沒有讓我們指定每頁筆數的參數，觀察到的預設值是 20
+    private static final int PAGE_SIZE = 20;
+    // 平台硬限制：page * PAGE_SIZE 達到這個值就直接 400，不管 total_entries 講多少
+    private static final int MAX_REACHABLE_ENTRIES = 2000;
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -146,9 +157,21 @@ public class CakeResumeListScraper implements JobListScraper {
             // 用累積筆數判斷是否還有下一頁，不能用單頁筆數回推（最後一頁筆數通常不足整頁，
             // 用「page * 當頁筆數」回推會誤判還有下一頁，多打一次空請求）
             int totalEntries = response.path("total_entries").asInt(0);
-            boolean hasNextPage = discovered.size() < totalEntries;
+            // total_entries 不會反映平台的隱性頁數上限（見 class 註解），下一頁會超過
+            // 上限的話就不要送出那個註定 400 的請求，主動停在這裡
+            boolean withinPlatformPageLimit = (long) (page + 1) * PAGE_SIZE < MAX_REACHABLE_ENTRIES;
+            boolean hasNextPage = discovered.size() < totalEntries && withinPlatformPageLimit;
 
             if (!hasNextPage) {
+                if (discovered.size() < totalEntries) {
+                    log.warn("CakeResume total_entries={} exceeds the platform's reachable page "
+                                    + "limit (page*{} would reach or exceed {}), stopping early at "
+                                    + "page={} with {} jobs discovered for query id={}",
+                            totalEntries, PAGE_SIZE, MAX_REACHABLE_ENTRIES, page, discovered.size(),
+                            query.id());
+                    meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE,
+                            "reason", "page_limit_exceeded").increment();
+                }
                 return new ScanResult(discovered, pagesScanned, true, page + 1);
             }
 

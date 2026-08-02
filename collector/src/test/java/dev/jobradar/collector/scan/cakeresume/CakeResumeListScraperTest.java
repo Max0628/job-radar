@@ -103,6 +103,42 @@ class CakeResumeListScraperTest {
         server.verify();
     }
 
+    /**
+     * 2026-08-02 事故：CakeResume 平台有一個 total_entries 完全不會反映的隱性限制
+     * （page * 20 達到 2000 就直接 400），深掃因此卡在 page 101 永遠失敗。這裡驗證
+     * 修好之後，翻頁迴圈會在送出那個註定失敗的請求之前，自己主動停在 page 99
+     * （因為 page 100 開始就會超過平台上限），不會再送出 page 100 的請求。
+     */
+    @Test
+    void stopsBeforeExceedingPlatformPageLimitEvenWhenTotalEntriesSaysThereIsMore() throws Exception {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+
+        // 只設一個 expectation（page=99）：如果修法沒生效、程式繼續翻到 page=100，
+        // MockRestServiceServer 會因為收到未預期的請求而讓測試失敗
+        server.expect(requestTo(containsString("/api/client/v1/jobs/search")))
+                .andExpect(content().string(containsString("\"page\":99")))
+                .andRespond(withSuccess(fixture("cakeresume-search-page99-large-total.json"), MediaType.APPLICATION_JSON));
+
+        CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        CakeResumeListScraper scraper = new CakeResumeListScraper(properties, new ObjectMapper(), builder, meterRegistry);
+        SearchQuery query = new SearchQuery(1, "cakeresume", "Taipei", List.of(), 120, true, null);
+
+        ScanResult result = scraper.scan(query, true, 99, ids -> false);
+
+        assertThat(result.pagesScanned()).isEqualTo(1);
+        assertThat(result.reachedEnd()).isTrue();
+        assertThat(result.discovered()).hasSize(2);
+        assertThat(meterRegistry.get("jobradar.scrape.anomaly")
+                        .tag("source", "cakeresume")
+                        .tag("reason", "page_limit_exceeded")
+                        .counter()
+                        .count())
+                .isEqualTo(1.0);
+        server.verify();
+    }
+
     @Test
     void rateLimitRetryIsCounted() throws Exception {
         RestClient.Builder builder = RestClient.builder();
