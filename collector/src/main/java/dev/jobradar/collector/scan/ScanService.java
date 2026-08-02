@@ -9,23 +9,29 @@ import dev.jobradar.common.source.Source;
 import dev.jobradar.common.source.SourceBlockedException;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+
+import jakarta.annotation.PostConstruct;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
+
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 @Service
+@RequiredArgsConstructor
 public class ScanService {
 
     private static final Logger log = LoggerFactory.getLogger(ScanService.class);
 
-    private final Map<Source, JobListScraper> scrapersBySource;
+    private final List<JobListScraper> scrapers;
     private final ScrapeCursorRepository cursorRepository;
     private final ScrapeRunRepository runRepository;
     private final JobExistenceRepository jobExistenceRepository;
@@ -33,25 +39,11 @@ public class ScanService {
     private final CollectorScanProperties properties;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final MeterRegistry meterRegistry;
+    private Map<Source, JobListScraper> scrapersBySource;
 
-    public ScanService(
-            List<JobListScraper> scrapers,
-            ScrapeCursorRepository cursorRepository,
-            ScrapeRunRepository runRepository,
-            JobExistenceRepository jobExistenceRepository,
-            EnabledSearchQueryRepository searchQueryRepository,
-            CollectorScanProperties properties,
-            KafkaTemplate<String, Object> kafkaTemplate,
-            MeterRegistry meterRegistry
-    ) {
-        this.scrapersBySource = Source.indexBy(scrapers, JobListScraper::source);
-        this.cursorRepository = cursorRepository;
-        this.runRepository = runRepository;
-        this.jobExistenceRepository = jobExistenceRepository;
-        this.searchQueryRepository = searchQueryRepository;
-        this.properties = properties;
-        this.kafkaTemplate = kafkaTemplate;
-        this.meterRegistry = meterRegistry;
+    @PostConstruct
+    void indexScrapersBySource() {
+        scrapersBySource = Source.indexBy(scrapers, JobListScraper::source);
     }
 
     public void runScan(SearchQuery query) {

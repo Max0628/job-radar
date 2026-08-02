@@ -71,6 +71,7 @@ class ScanServiceTest {
         ScanService service = new ScanService(
                 List.of(scraper), cursorRepository, runRepository, jobExistenceRepository, searchQueryRepository,
                 properties, kafkaTemplate, meterRegistry);
+        service.indexScrapersBySource();
         SearchQuery query = new SearchQuery(1, Source.YOURATOR, null, List.of(), 120, true, null);
 
         service.runScan(query);
@@ -112,6 +113,7 @@ class ScanServiceTest {
         ScanService service = new ScanService(
                 List.of(scraper), cursorRepository, runRepository, jobExistenceRepository, searchQueryRepository,
                 properties, kafkaTemplate, meterRegistry);
+        service.indexScrapersBySource();
         SearchQuery query = new SearchQuery(1, Source.YOURATOR, null, List.of(), 120, true, null);
 
         service.runScan(query);
@@ -154,6 +156,7 @@ class ScanServiceTest {
         ScanService service = new ScanService(
                 List.of(scraper), cursorRepository, runRepository, jobExistenceRepository, searchQueryRepository,
                 properties, kafkaTemplate, meterRegistry);
+        service.indexScrapersBySource();
         SearchQuery query = new SearchQuery(1, Source.JOB104, null, List.of("2007001016"), 120, true, null);
 
         service.runScan(query);
@@ -194,6 +197,7 @@ class ScanServiceTest {
         ScanService service = new ScanService(
                 List.of(scraper), cursorRepository, runRepository, jobExistenceRepository, searchQueryRepository,
                 properties, kafkaTemplate, meterRegistry);
+        service.indexScrapersBySource();
         SearchQuery query = new SearchQuery(1, Source.YOURATOR, null, List.of(), 120, true, null);
 
         service.runScan(query);
@@ -228,6 +232,7 @@ class ScanServiceTest {
         ScanService service = new ScanService(
                 List.of(scraper), cursorRepository, runRepository, jobExistenceRepository, searchQueryRepository,
                 properties, kafkaTemplate, meterRegistry);
+        service.indexScrapersBySource();
         SearchQuery query = new SearchQuery(1, Source.YOURATOR, null, List.of(), 120, true, null);
 
         service.runScan(query);
@@ -258,6 +263,7 @@ class ScanServiceTest {
         ScanService service = new ScanService(
                 List.of(scraper), cursorRepository, runRepository, jobExistenceRepository, searchQueryRepository,
                 properties, kafkaTemplate, meterRegistry);
+        service.indexScrapersBySource();
         SearchQuery query = new SearchQuery(1, Source.YOURATOR, null, List.of(), 120, true, null);
 
         service.runScan(query);
