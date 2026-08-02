@@ -10,6 +10,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.jobradar.collector.scan.CollectorScanProperties;
 import dev.jobradar.collector.scan.ScanResult;
+import dev.jobradar.collector.scan.ScraperRequestExecutor;
 import dev.jobradar.common.domain.SearchQuery;
 import dev.jobradar.common.source.Source;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -41,7 +42,7 @@ class Job104ListScraperTest {
                 .andRespond(withSuccess(fixture("job104-list-page2.json"), MediaType.APPLICATION_JSON));
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
-        Job104ListScraper scraper = new Job104ListScraper(properties, new ObjectMapper(), builder, new SimpleMeterRegistry());
+        Job104ListScraper scraper = new Job104ListScraper(properties, new ObjectMapper(), builder.build(), new SimpleMeterRegistry(), new ScraperRequestExecutor(new SimpleMeterRegistry()));
         SearchQuery query = new SearchQuery(1, Source.JOB104, "6001001000", List.of("2007001016"), 120, true, null);
 
         ScanResult result = scraper.scan(query, false, 1, ids -> false);
@@ -78,7 +79,7 @@ class Job104ListScraperTest {
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-        Job104ListScraper scraper = new Job104ListScraper(properties, new ObjectMapper(), builder, meterRegistry);
+        Job104ListScraper scraper = new Job104ListScraper(properties, new ObjectMapper(), builder.build(), meterRegistry, new ScraperRequestExecutor(meterRegistry));
         SearchQuery query = new SearchQuery(1, Source.JOB104, "6001001000", List.of("2007001016"), 120, true, null);
 
         ScanResult result = scraper.scan(query, false, 1, ids -> false);
@@ -106,7 +107,7 @@ class Job104ListScraperTest {
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-        Job104ListScraper scraper = new Job104ListScraper(properties, new ObjectMapper(), builder, meterRegistry);
+        Job104ListScraper scraper = new Job104ListScraper(properties, new ObjectMapper(), builder.build(), meterRegistry, new ScraperRequestExecutor(meterRegistry));
         SearchQuery query = new SearchQuery(1, Source.JOB104, "6001001000", List.of("2007001016"), 120, true, null);
 
         scraper.scan(query, false, 1, ids -> false);
@@ -134,7 +135,7 @@ class Job104ListScraperTest {
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-        Job104ListScraper scraper = new Job104ListScraper(properties, new ObjectMapper(), builder, meterRegistry);
+        Job104ListScraper scraper = new Job104ListScraper(properties, new ObjectMapper(), builder.build(), meterRegistry, new ScraperRequestExecutor(meterRegistry));
         SearchQuery query = new SearchQuery(1, Source.JOB104, "6001001000", List.of("2007001016"), 120, true, null);
 
         ScanResult result = scraper.scan(query, false, 1, ids -> false);
@@ -163,7 +164,7 @@ class Job104ListScraperTest {
                 .andRespond(withSuccess(fixture("job104-list-page1.json"), MediaType.APPLICATION_JSON));
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
-        Job104ListScraper scraper = new Job104ListScraper(properties, new ObjectMapper(), builder, new SimpleMeterRegistry());
+        Job104ListScraper scraper = new Job104ListScraper(properties, new ObjectMapper(), builder.build(), new SimpleMeterRegistry(), new ScraperRequestExecutor(new SimpleMeterRegistry()));
         SearchQuery query = new SearchQuery(1, Source.JOB104, "6001001000", List.of("2007001016"), 120, true, null);
 
         ScanResult result = scraper.scan(query, false, 1, ids -> true);
@@ -187,7 +188,7 @@ class Job104ListScraperTest {
                 .andRespond(withSuccess(fixture("job104-list-page2.json"), MediaType.APPLICATION_JSON));
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
-        Job104ListScraper scraper = new Job104ListScraper(properties, new ObjectMapper(), builder, new SimpleMeterRegistry());
+        Job104ListScraper scraper = new Job104ListScraper(properties, new ObjectMapper(), builder.build(), new SimpleMeterRegistry(), new ScraperRequestExecutor(new SimpleMeterRegistry()));
         SearchQuery query = new SearchQuery(1, Source.JOB104, "6001001000", List.of("2007001016"), 120, true, null);
 
         ScanResult result = scraper.scan(query, true, 2, ids -> false);
@@ -210,7 +211,7 @@ class Job104ListScraperTest {
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-        Job104ListScraper scraper = new Job104ListScraper(properties, new ObjectMapper(), builder, meterRegistry);
+        Job104ListScraper scraper = new Job104ListScraper(properties, new ObjectMapper(), builder.build(), meterRegistry, new ScraperRequestExecutor(meterRegistry));
         SearchQuery query = new SearchQuery(1, Source.JOB104, "6001001000", List.of("2007001016"), 120, true, null);
 
         assertThatThrownBy(() -> scraper.scan(query, false, 1, ids -> false))
@@ -235,7 +236,7 @@ class Job104ListScraperTest {
 
         CollectorScanProperties properties = new CollectorScanProperties(300_000, 0, "test-agent", 0, 0, 24, 3, 15, 2000, 24, 45, Map.of());
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
-        Job104ListScraper scraper = new Job104ListScraper(properties, new ObjectMapper(), builder, meterRegistry);
+        Job104ListScraper scraper = new Job104ListScraper(properties, new ObjectMapper(), builder.build(), meterRegistry, new ScraperRequestExecutor(meterRegistry));
         SearchQuery query = new SearchQuery(1, Source.JOB104, "6001001000", List.of("2007001016"), 120, true, null);
 
         assertThatThrownBy(() -> scraper.scan(query, false, 1, ids -> false))

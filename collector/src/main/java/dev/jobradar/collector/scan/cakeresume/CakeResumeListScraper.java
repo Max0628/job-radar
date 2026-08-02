@@ -7,10 +7,13 @@ import dev.jobradar.collector.scan.CollectorScanProperties;
 import dev.jobradar.collector.scan.DiscoveredJob;
 import dev.jobradar.collector.scan.JobListScraper;
 import dev.jobradar.collector.scan.ScanResult;
+import dev.jobradar.collector.scan.ScrapeMetrics;
+import dev.jobradar.collector.scan.ScraperRequestExecutor;
 import dev.jobradar.common.domain.SearchQuery;
 import dev.jobradar.common.source.CakeResumeEndpoints;
 import dev.jobradar.common.source.Source;
 import io.micrometer.core.instrument.MeterRegistry;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -18,28 +21,25 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
+
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.HttpServerErrorException;
-import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
 /**
  * CakeResume search API 適配器。
- *
+ * <p>
  * 與 Yourator 不同之處：
  * - 一次 API 就返回完整數據，無需 detail fetching（needsDetail=false）
  * - POST 請求，request body 包含 query / filters / page / sort_by
  * - 有明確的 total_entries 可以核對「是否真的翻完」，Yourator 完全沒有這種欄位
- *
+ * <p>
  * 刻意不設頁數上限（見 add-crawl-improvements design.md），改用兩個安全網，理由與
  * YouratorListScraper 相同（見該類別註解）：單輪掃描時間上限 + 前後兩頁職缺集合完全
  * 相同時視為分頁卡住。兩者都不當作失敗，只記警告 + anomaly 計數器。
- *
+ * <p>
  * 平台另有一個 {@code total_entries} 完全不會反映的隱性限制：{@code page * 每頁筆數}
  * 達到 2000 時 API 直接回 400（"Search range is too large"），不管 total_entries
  * 講的總數是多少（2026-08-02 事故：13 個 profession 加總後的結果數超過 2000，深掃
@@ -47,42 +47,20 @@ import org.springframework.web.client.RestClient;
  * 的 lastPage 不同，CakeResume 沒有任何欄位誠實告知這個上限，只能從錯誤訊息反推、
  * 寫死成常數，翻頁迴圈主動算到會超過上限就停止，不要真的送出那個註定失敗的請求。
  */
+@RequiredArgsConstructor
 @Component
 public class CakeResumeListScraper implements JobListScraper {
 
     private static final Logger log = LoggerFactory.getLogger(CakeResumeListScraper.class);
     private static final Source SOURCE = Source.CAKERESUME;
-    // CakeResume API 沒有讓我們指定每頁筆數的參數，觀察到的預設值是 20
-    private static final int PAGE_SIZE = 20;
-    // 平台硬限制：page * PAGE_SIZE 達到這個值就直接 400，不管 total_entries 講多少
-    private static final int MAX_REACHABLE_ENTRIES = 2000;
+    private static final int PAGE_SIZE = 20;                // CakeResume API 沒有讓我們指定每頁筆數的參數，觀察到的預設值是 20
+    private static final int MAX_REACHABLE_ENTRIES = 2000;  // 平台硬限制：page * PAGE_SIZE 達到這個值就直接 400，不管 total_entries 講多少
 
-    private final RestClient restClient;
-    private final ObjectMapper objectMapper;
     private final CollectorScanProperties properties;
+    private final ObjectMapper objectMapper;
+    private final RestClient cakeResumeRestClient;
     private final MeterRegistry meterRegistry;
-
-    public CakeResumeListScraper(
-            CollectorScanProperties properties,
-            ObjectMapper objectMapper,
-            RestClient.Builder restClientBuilder,
-            MeterRegistry meterRegistry
-    ) {
-        this.properties = properties;
-        this.objectMapper = objectMapper;
-        this.meterRegistry = meterRegistry;
-        // connect/read timeout 由注入的 restClientBuilder 帶（見
-        // dev.jobradar.collector.config.HttpClientConfig）——刻意不在這裡呼叫
-        // requestFactory()，那樣會讓單元測試的 MockRestServiceServer 綁定失效
-        // （已實際踩過這個坑，見 HttpClientConfig 的類別註解）。
-        this.restClient = restClientBuilder
-                .baseUrl(CakeResumeEndpoints.BASE_URL)
-                .defaultHeader(HttpHeaders.USER_AGENT, properties.userAgent())
-                .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
-                .defaultHeader(HttpHeaders.REFERER, "https://www.cake.me/jobs")
-                .build();
-    }
+    private final ScraperRequestExecutor scraperRequestExecutor;
 
     @Override
     public Source source() {
@@ -106,7 +84,7 @@ public class CakeResumeListScraper implements JobListScraper {
                 log.warn("CakeResume scan exceeded {} time budget at page={} for query id={}, "
                                 + "stopping with {} jobs already discovered",
                         maxScanDuration, page, query.id(), discovered.size());
-                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE.value(), "reason", "timeout").increment();
+                meterRegistry.counter(ScrapeMetrics.ANOMALY, ScrapeMetrics.SOURCE_TAG, SOURCE.value(), ScrapeMetrics.REASON_TAG, "timeout").increment();
                 return new ScanResult(discovered, pagesScanned, false, page);
             }
 
@@ -138,7 +116,7 @@ public class CakeResumeListScraper implements JobListScraper {
                 log.warn("CakeResume page={} returned identical job set to previous page for query id={}, "
                                 + "stopping (pagination appears stuck)",
                         page, query.id());
-                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE.value(), "reason", "duplicate_page")
+                meterRegistry.counter(ScrapeMetrics.ANOMALY, ScrapeMetrics.SOURCE_TAG, SOURCE.value(), ScrapeMetrics.REASON_TAG, "duplicate_page")
                         .increment();
                 return new ScanResult(discovered, pagesScanned, true, page);
             }
@@ -170,95 +148,58 @@ public class CakeResumeListScraper implements JobListScraper {
                                     + "page={} with {} jobs discovered for query id={}",
                             totalEntries, PAGE_SIZE, MAX_REACHABLE_ENTRIES, page, discovered.size(),
                             query.id());
-                    meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE.value(),
-                            "reason", "page_limit_exceeded").increment();
+                    meterRegistry.counter(ScrapeMetrics.ANOMALY, ScrapeMetrics.SOURCE_TAG, SOURCE.value(),
+                            ScrapeMetrics.REASON_TAG, "page_limit_exceeded").increment();
                 }
                 return new ScanResult(discovered, pagesScanned, true, page + 1);
             }
 
             page++;
-            sleep(properties.requestIntervalMillis());
+            scraperRequestExecutor.pace(properties.requestIntervalMillis(), "CakeResume");
         }
     }
 
     private JsonNode searchPage(String location, List<String> professions, int page) {
-        int maxRetry = properties.maxRetryFor(SOURCE.value());
-        long backoffBaseMillis = properties.retryBackoffBaseMillisFor(SOURCE.value());
-        int attempt = 0;
-        while (true) {
-            attempt++;
-            try {
-                ObjectNode body = objectMapper.createObjectNode();
-                // query 是必填欄位（缺了會回 422），但 add-crawl-improvements 之後不再
-                // 支援自由輸入關鍵字——這裡固定送空字串，等同「不限關鍵字」，完全靠
-                // professions 篩選（已實測證實是真正的聯集，見 design.md；CakeResume
-                // 的 query 欄位反而不支援聯集語意，這也是拿掉它的原因之一）。
-                body.put("query", "");
-
-                ObjectNode filters = objectMapper.createObjectNode();
-                // filters.location（單數、字串）是 no-op，實測拿明顯不相關的地區測試
-                // total_entries 完全不變。正確欄位是 filters.locations（複數、陣列），
-                // 值必須是 available_facets.locations 回傳的完整字串
-                // （如「信義區, 台北市, 台灣」），不能只填「Taipei」這種簡短值。
-                if (location != null && !location.isBlank()) {
-                    filters.putArray("locations").add(location);
-                }
-                // professions 代碼來自 available_facets.professions（如 "it_back-end-engineer"），
-                // 已驗證單一值即可正確過濾，不像 Yourator 的 category[] 有單值不可靠的限制
-                if (professions != null && !professions.isEmpty()) {
-                    var professionsArray = filters.putArray("professions");
-                    professions.forEach(professionsArray::add);
-                }
-                body.set("filters", filters);
-
-                body.put("page", page);
-                body.put("sort_by", "latest");
-
-                String response = restClient.post()
-                        .uri(CakeResumeEndpoints.SEARCH_PATH)
-                        .body(body)
-                        .retrieve()
-                        .body(String.class);
-
-                return objectMapper.readTree(response);
-            } catch (HttpClientErrorException.Forbidden | HttpServerErrorException.ServiceUnavailable e) {
+        return scraperRequestExecutor.withRetry(
+                "CakeResume", SOURCE.value(), page,
+                properties.maxRetryFor(SOURCE.value()), properties.retryBackoffBaseMillisFor(SOURCE.value()),
                 // 疑似風控相關（見 architecture.md D19）：不重試，直接失敗——對這類錯誤
                 // 重試只會浪費請求、拉高被判定高風險的機率，跟 429/逾時的處理原則不同
-                meterRegistry.counter("jobradar.scrape.anomaly", "source", SOURCE.value(), "reason", "blocked").increment();
-                throw new IllegalStateException("CakeResume returned " + e.getStatusCode() + " for page " + page, e);
-            } catch (HttpClientErrorException.TooManyRequests e) {
-                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE.value(), "reason", "rate_limited").increment();
-                if (attempt >= maxRetry) {
-                    throw new IllegalStateException("CakeResume rate limited after " + maxRetry + " retries", e);
-                }
-                long backoffMillis = backoffBaseMillis * attempt;
-                log.warn("CakeResume returned 429 for page={}, retry {} after {}ms", page, attempt, backoffMillis);
-                sleep(backoffMillis);
-            } catch (ResourceAccessException e) {
-                // 連線/讀取逾時等 I/O 層級的偶發問題，跟 429 一樣值得重試——沒有頁數上限
-                // 之後一輪掃描要打的請求數變多，偶發逾時的機率也跟著變高（見建構子註解），
-                // 沒有這個重試的話，任何一次偶發逾時就會讓整輪掃描全部作廢
-                meterRegistry.counter("jobradar.scrape.retry", "source", SOURCE.value(), "reason", "io_timeout").increment();
-                if (attempt >= maxRetry) {
-                    throw new IllegalStateException(
-                            "CakeResume request failed after " + maxRetry + " retries (page " + page + ")", e);
-                }
-                long backoffMillis = backoffBaseMillis * attempt;
-                log.warn("CakeResume I/O error for page={}, retry {} after {}ms: {}",
-                        page, attempt, backoffMillis, e.getMessage());
-                sleep(backoffMillis);
-            } catch (Exception e) {
-                throw new IllegalStateException("Failed to fetch CakeResume page " + page, e);
-            }
-        }
-    }
+                e -> new IllegalStateException("CakeResume returned " + e.getStatusCode() + " for page " + page, e),
+                () -> {
+                    ObjectNode body = objectMapper.createObjectNode();
+                    // query 是必填欄位（缺了會回 422），但 add-crawl-improvements 之後不再
+                    // 支援自由輸入關鍵字——這裡固定送空字串，等同「不限關鍵字」，完全靠
+                    // professions 篩選（已實測證實是真正的聯集，見 design.md；CakeResume
+                    // 的 query 欄位反而不支援聯集語意，這也是拿掉它的原因之一）。
+                    body.put("query", "");
 
-    private void sleep(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Interrupted while rate limiting CakeResume requests", e);
-        }
+                    ObjectNode filters = objectMapper.createObjectNode();
+                    // filters.location（單數、字串）是 no-op，實測拿明顯不相關的地區測試
+                    // total_entries 完全不變。正確欄位是 filters.locations（複數、陣列），
+                    // 值必須是 available_facets.locations 回傳的完整字串
+                    // （如「信義區, 台北市, 台灣」），不能只填「Taipei」這種簡短值。
+                    if (location != null && !location.isBlank()) {
+                        filters.putArray("locations").add(location);
+                    }
+                    // professions 代碼來自 available_facets.professions（如 "it_back-end-engineer"），
+                    // 已驗證單一值即可正確過濾，不像 Yourator 的 category[] 有單值不可靠的限制
+                    if (professions != null && !professions.isEmpty()) {
+                        var professionsArray = filters.putArray("professions");
+                        professions.forEach(professionsArray::add);
+                    }
+                    body.set("filters", filters);
+
+                    body.put("page", page);
+                    body.put("sort_by", "latest");
+
+                    String response = cakeResumeRestClient.post()
+                            .uri(CakeResumeEndpoints.SEARCH_PATH)
+                            .body(body)
+                            .retrieve()
+                            .body(String.class);
+
+                    return objectMapper.readTree(response);
+                });
     }
 }
