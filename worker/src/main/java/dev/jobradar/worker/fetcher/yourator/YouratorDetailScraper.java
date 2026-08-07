@@ -3,6 +3,7 @@ package dev.jobradar.worker.fetcher.yourator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.jobradar.common.source.Source;
+import dev.jobradar.worker.fetcher.DetailContentUnavailableException;
 import dev.jobradar.worker.fetcher.DetailScraper;
 import io.github.resilience4j.retry.annotation.Retry;
 import java.time.Duration;
@@ -56,7 +57,9 @@ public class YouratorDetailScraper implements DetailScraper {
 
             Element script = doc.selectFirst("script[type=application/ld+json]");
             if (script == null) {
-                throw new IllegalStateException("No JobPosting JSON-LD found at " + url);
+                // 少數頁面模板（實測案例：企業客製化活動頁）不會內嵌 JobPosting JSON-LD，
+                // 不是暫時性錯誤、重試也不會有變化，交給呼叫端跳過而不是走一般重試/DLQ 路徑
+                throw new DetailContentUnavailableException("No JobPosting JSON-LD found at " + url);
             }
             return objectMapper.readTree(script.data());
         } catch (java.io.IOException e) {

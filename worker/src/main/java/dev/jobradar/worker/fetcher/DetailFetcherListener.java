@@ -7,6 +7,7 @@ import dev.jobradar.common.kafka.Topics;
 import dev.jobradar.common.repository.JobExistenceRepository;
 import dev.jobradar.common.source.Source;
 import dev.jobradar.common.source.SourceBlockedException;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,11 @@ import org.springframework.stereotype.Component;
  *   每次都放行轉成 RawEnvelope——刻意不做「已存在跳過」，讓 Normalizer 每輪都能更新
  *   last_seen_at（見 duplicate-prevention spec，冪等 upsert 需要職缺持續被重新看到才能標記
  *   still-active）。
+ *
+ * DetailScraper 拋 {@link DetailContentUnavailableException}（頁面存在但預期內容缺失，
+ * 重試不會有變化）時直接記警告 + anomaly 計數器後跳過，不重新拋出——避免每輪掃描重新
+ * 發現同一筆問題職缺時，都在 Kafka error handler 白白重試 3 次又進一次 DLQ（見 job-radar
+ * 2026-08 Yourator 缺 JSON-LD 事件：同一筆職缺灌了 35 筆 DLQ 訊息）。
  */
 @Component
 public class DetailFetcherListener {
@@ -36,17 +42,20 @@ public class DetailFetcherListener {
     private final JobExistenceRepository jobExistenceRepository;
     private final SearchQueryDisableRepository searchQueryDisableRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final MeterRegistry meterRegistry;
 
     public DetailFetcherListener(
             List<DetailScraper> scrapers,
             JobExistenceRepository jobExistenceRepository,
             SearchQueryDisableRepository searchQueryDisableRepository,
-            KafkaTemplate<String, Object> kafkaTemplate
+            KafkaTemplate<String, Object> kafkaTemplate,
+            MeterRegistry meterRegistry
     ) {
         this.scrapersBySource = Source.indexBy(scrapers, DetailScraper::source);
         this.jobExistenceRepository = jobExistenceRepository;
         this.searchQueryDisableRepository = searchQueryDisableRepository;
         this.kafkaTemplate = kafkaTemplate;
+        this.meterRegistry = meterRegistry;
     }
 
     @KafkaListener(topics = Topics.JOBS_DISCOVERED, groupId = "worker-fetcher", containerFactory = "discoveredListenerFactory")
@@ -82,6 +91,13 @@ public class DetailFetcherListener {
                     envelope.source(), envelope.sourceJobId(), e);
             searchQueryDisableRepository.disableAllForSource(envelope.source(), e.getMessage());
             throw e;
+        } catch (DetailContentUnavailableException e) {
+            log.warn("Detail content unavailable, skipping source={} sourceJobId={}: {}",
+                    envelope.source(), envelope.sourceJobId(), e.getMessage());
+            meterRegistry.counter("jobradar.detail.skip",
+                            "source", envelope.source().value(), "reason", "content_unavailable")
+                    .increment();
+            return;
         }
         publishRaw(envelope, payload);
     }
