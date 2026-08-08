@@ -29,10 +29,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 /**
- * Yourator 沒有精確的更新時間排序（見 design.md 附錄），list 預設順序是相關性排序，
- * 不是 chronological——這代表淺掃的早停（pageIsFullyKnown，見 JobListScraper）不保證
- * 停在「真的都是舊資料」的位置，只能盡量而為（見 architecture.md D6 待確認事項）。
- * 也沒有任何「總筆數」欄位（`payload` 只有 `hasMore`，沒有 total/totalCount），翻頁純粹
+ * 2026-08 起改用 {@code sort=latest}（見 fetchPage 內的說明）：原本用 most_related
+ * （相關性排序）時，淺掃的早停（pageIsFullyKnown，見 JobListScraper）不保證停在「真的
+ * 都是舊資料」的位置，實際發生過 Yourator 職缺連續 9 天完全沒有新資料進資料庫、但平台上
+ * 其實持續有新職缺的事故。也沒有任何「總筆數」欄位（`payload` 只有 `hasMore`，沒有
+ * total/totalCount），翻頁純粹
  * 依賴 `hasMore` 判斷，沒有辦法像 CakeResume 那樣拿 total_entries 做二次確認（見
  * add-crawl-improvements design.md 實測記錄）。重複看到的職缺交由下游冪等 upsert 處理。
  * <p>
@@ -152,10 +153,16 @@ public class YouratorListScraper implements JobListScraper {
                     // design.md 側錄更正紀錄，term[] 送什麼都回同一批未過濾結果的年代已經
                     // 過去），add-crawl-improvements 之後乾脆整個拿掉自由輸入的關鍵字，
                     // 完全靠 category[] 篩選（已實測證實是真正的聯集，見 design.md）。
+                    //
+                    // sort 原本用 most_related（相關性排序），source-api-notes.md 從一開始就
+                    // 標記「是否有時間排序選項尚未驗證，直接影響 early-termination 策略」這個
+                    // 待辦一直沒回頭處理——2026-08 發現 Yourator 職缺自 7/30 起完全沒有新資料，
+                    // 但平台上實際仍持續有新職缺，實測 sort=latest 有效（回傳內容確實不同、含
+                    // 「一天內更新」的職缺），改用這個值讓淺掃的「整頁已知就提早停」判斷成立。
                     String body = youratorRestClient.get()
                             .uri(uriBuilder -> {
                                 uriBuilder.path(YouratorEndpoints.JOBS_LIST_PATH)
-                                        .queryParam("sort", "most_related")
+                                        .queryParam("sort", "latest")
                                         .queryParam("page", page);
                                 if (areaCode != null && !areaCode.isBlank()) {
                                     uriBuilder.queryParam("area[]", areaCode);
