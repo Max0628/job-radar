@@ -1,18 +1,18 @@
 # `scrape_cursors`
 
-## Purpose
+## 用途
 
-Stores scheduling and deep-scan progress for each row in `search_queries`. The scheduler uses `last_scanned_at` to decide whether a query is due; deep scans use the page and completion fields for continuation.
+保存每個 `search_queries` 的排程狀態與 deep scan 進度。Scheduler 使用 `last_scanned_at` 判斷 query 是否到期；deep scan 使用 page 與 completion 欄位接續掃描。
 
-## Columns
+## 欄位
 
-| Column | Type | Nullable | Default | Description |
+| Column | Type | Nullable | Default | 說明 |
 |---|---|---:|---|---|
-| `id` | `BIGINT` (`BIGSERIAL`) | No | `nextval('scrape_cursors_id_seq')` | Internal surrogate primary key. |
-| `search_query_id` | `BIGINT` | No | - | The search query whose scan state is stored. |
-| `last_scanned_at` | `TIMESTAMPTZ` | Yes | - | Time of the most recent completed scan attempt used by scheduling. |
-| `last_page_scanned` | `INTEGER` | Yes | - | Page to resume for an unfinished deep scan; cleared when a deep scan reaches the end. |
-| `last_deep_scan_completed_at` | `TIMESTAMPTZ` | Yes | - | Time the most recent full deep scan completed. Used to decide when the next deep scan is due. |
+| `id` | `BIGINT` (`BIGSERIAL`) | No | `nextval('scrape_cursors_id_seq')` | cursor 的 internal surrogate primary key。 |
+| `search_query_id` | `BIGINT` | No | - | 這筆 cursor 所屬的搜尋設定。 |
+| `last_scanned_at` | `TIMESTAMPTZ` | Yes | - | 最近一次完成掃描嘗試的時間，Scheduler 用它計算下次執行時間。 |
+| `last_page_scanned` | `INTEGER` | Yes | - | 未完成 deep scan 時，下次要接續的 page；deep scan 完成後會清空。 |
+| `last_deep_scan_completed_at` | `TIMESTAMPTZ` | Yes | - | 最近一次完整 deep scan 完成的時間，用來判斷下次 deep scan 是否到期。 |
 
 ## Constraints
 
@@ -24,8 +24,8 @@ Stores scheduling and deep-scan progress for each row in `search_queries`. The s
 
 ## Indexes
 
-| Name | Definition | Purpose |
+| Name | Definition | 用途 |
 |---|---|---|
-| `scrape_cursors_pkey` | Unique B-tree on `id` | Primary-key lookup. |
-| `scrape_cursors_search_query_id_key` | Unique B-tree on `(search_query_id)` | One cursor per search query and fast query-state lookup. |
+| `scrape_cursors_pkey` | Unique B-tree on `id` | Primary key 查詢。 |
+| `scrape_cursors_search_query_id_key` | Unique B-tree on `(search_query_id)` | 保證一個 query 只有一個 cursor，並加速狀態查詢。 |
 

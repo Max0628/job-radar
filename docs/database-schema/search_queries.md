@@ -1,21 +1,21 @@
 # `search_queries`
 
-## Purpose
+## 用途
 
-User-managed crawler configuration. Each row describes one source, location, category scope, scan interval, and enabled/disabled state. The scheduler reads enabled rows and uses the related `scrape_cursors` row for timing and deep-scan progress.
+使用者管理的 crawler 設定。每列描述一個來源、地區、分類範圍、掃描間隔與啟用狀態。Scheduler 讀取 enabled 的列，並使用對應的 `scrape_cursors` 管理時間與 deep scan 進度。
 
-## Columns
+## 欄位
 
-| Column | Type | Nullable | Default | Description |
+| Column | Type | Nullable | Default | 說明 |
 |---|---|---:|---|---|
-| `id` | `BIGINT` (`BIGSERIAL`) | No | `nextval('search_queries_id_seq')` | Internal search configuration identifier. |
-| `source` | `VARCHAR(32)` | No | - | Source platform, such as `yourator`, `cakeresume`, or `104`. |
-| `interval_minutes` | `INTEGER` | No | `120` | Minimum interval between scans for this configuration. |
-| `enabled` | `BOOLEAN` | No | `TRUE` | Whether the scheduler may run this configuration. |
-| `created_at` | `TIMESTAMPTZ` | No | `now()` | Time the configuration was created. |
-| `location` | `VARCHAR(64)` | Yes | - | Source-specific location filter. Yourator uses an area code; other sources use their own accepted location value. |
-| `categories` | `JSONB` | Yes | - | Source-specific category/profession values. Yourator stores category names; CakeResume stores profession codes; 104 stores category codes. |
-| `disabled_reason` | `TEXT` | Yes | - | Reason for an automatic source/query disable, such as a blocked-source HTTP response. Cleared when the query is re-enabled through the API. |
+| `id` | `BIGINT` (`BIGSERIAL`) | No | `nextval('search_queries_id_seq')` | 搜尋設定的 internal ID。 |
+| `source` | `VARCHAR(32)` | No | - | 職缺來源平台，例如 `yourator`、`cakeresume`、`104`。 |
+| `interval_minutes` | `INTEGER` | No | `120` | 這筆設定兩次掃描之間的最小間隔。 |
+| `enabled` | `BOOLEAN` | No | `TRUE` | Scheduler 是否可以執行這筆設定。 |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | 建立設定的時間。 |
+| `location` | `VARCHAR(64)` | Yes | - | 來源平台專用的地區篩選值。Yourator 使用 area code，其他平台使用各自接受的格式。 |
+| `categories` | `JSONB` | Yes | - | 來源平台專用的分類／profession 值。Yourator 存分類名稱，CakeResume 存 profession code，104 存 category code。 |
+| `disabled_reason` | `TEXT` | Yes | - | 自動停用原因，例如來源回傳 blocked HTTP response。透過 API 重新啟用時會清除。 |
 
 ## Constraints
 
@@ -25,11 +25,11 @@ User-managed crawler configuration. Each row describes one source, location, cat
 
 ## Indexes
 
-| Name | Definition | Purpose |
+| Name | Definition | 用途 |
 |---|---|---|
-| `search_queries_pkey` | Unique B-tree on `id` | Primary-key lookup. |
+| `search_queries_pkey` | Unique B-tree on `id` | Primary key 查詢。 |
 
 ## Relationships
 
-`scrape_cursors.search_query_id` references `search_queries.id`. The current database has no uniqueness constraint on `(source, location, categories)`; duplicate configurations are possible at the database level.
+`scrape_cursors.search_query_id` 參照 `search_queries.id`。目前 database 沒有 `(source, location, categories)` 的 unique constraint，因此 database 層允許建立重複設定。
 

@@ -1,17 +1,17 @@
 # `favorites`
 
-## Purpose
+## 用途
 
-Single-user bookmarks for jobs. A favorite identifies a job by its source and source-specific job ID; it does not reference `jobs` with a foreign key.
+單一使用者的職缺收藏表。收藏透過 `source` 與來源平台的職缺 ID 識別職缺，沒有用 foreign key 直接參照 `jobs`。
 
-## Columns
+## 欄位
 
-| Column | Type | Nullable | Default | Description |
+| Column | Type | Nullable | Default | 說明 |
 |---|---|---:|---|---|
-| `id` | `BIGINT` (`BIGSERIAL`) | No | `nextval('favorites_id_seq')` | Surrogate primary key for the favorite record. |
-| `source` | `VARCHAR(32)` | No | - | Job platform identifier, for example `yourator`, `cakeresume`, or `104`. |
-| `source_job_id` | `VARCHAR(255)` | No | - | Job identifier assigned by the source platform. Its interpretation follows `source`. |
-| `created_at` | `TIMESTAMPTZ` | No | `now()` | Time when the favorite was created. |
+| `id` | `BIGINT` (`BIGSERIAL`) | No | `nextval('favorites_id_seq')` | 收藏紀錄的 internal surrogate primary key。 |
+| `source` | `VARCHAR(32)` | No | - | 職缺來源平台，例如 `yourator`、`cakeresume`、`104`。 |
+| `source_job_id` | `VARCHAR(255)` | No | - | 來源平台提供的職缺識別碼，實際格式依 `source` 而定。 |
+| `created_at` | `TIMESTAMPTZ` | No | `now()` | 建立收藏的時間。 |
 
 ## Constraints
 
@@ -22,12 +22,12 @@ Single-user bookmarks for jobs. A favorite identifies a job by its source and so
 
 ## Indexes
 
-| Name | Definition | Purpose |
+| Name | Definition | 用途 |
 |---|---|---|
-| `favorites_pkey` | Unique B-tree on `id` | Primary-key lookup. |
-| `favorites_source_source_job_id_key` | Unique B-tree on `(source, source_job_id)` | Prevents the same source job from being favorited more than once. |
+| `favorites_pkey` | Unique B-tree on `id` | Primary key 查詢。 |
+| `favorites_source_source_job_id_key` | Unique B-tree on `(source, source_job_id)` | 防止同一個來源職缺被重複收藏。 |
 
 ## Relationships
 
-There is no database foreign key to `jobs`; application code resolves the favorite against `(source, source_job_id)`.
+沒有指向 `jobs` 的 database foreign key；application code 透過 `(source, source_job_id)` 找回職缺。
 

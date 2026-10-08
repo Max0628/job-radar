@@ -18,7 +18,7 @@ Response 欄位細節先不寫，由使用者自行補上。
 ```bash
 curl -G "https://www.yourator.co/api/v4/jobs" \
   --data-urlencode "page=1" \
-  --data-urlencode "sort=most_related" \
+  --data-urlencode "sort=latest" \
   --data-urlencode "term[]=後端工程師" \
   --data-urlencode "area[]=TPE" \
   -H "Accept: application/json"
@@ -31,7 +31,7 @@ GET https://www.yourator.co/api/v4/jobs
 
 Query params:
   page: integer        # 從 1 開始
-  sort: string          # 已確認存在，前端預設 "most_related"；其他合法值未驗證
+  sort: string          # list scraper 必須用 "latest"；"most_related" 是相關性排序，不能搭配淺掃早停
   term[]: string         # 關鍵字，陣列格式，中英文皆可（已驗證會正確過濾）
   area[]: string          # 地區代碼，陣列格式（已驗證會正確過濾）
 
@@ -53,9 +53,8 @@ curl -G "https://www.yourator.co/api/v4/areas" \
 - 每頁固定 20 筆，`hasMore` / `nextPage` 驅動分頁
 - 不需要 cookie / CSRF token / 登入；瀏覽器側錄到的請求有帶 `cf_clearance`、`_yourator_session`、
   `x-csrf-token`，但拿掉這些純 server-to-server 呼叫一樣正常運作
-- `sort` 除了預設的 `most_related` 還有哪些值、是否有可用來做時間游標的選項（如 latest/created_at）
-  尚未驗證，直接影響能不能用 early-termination 分頁策略，待確認（見 openspec 的
-  `add-walking-skeleton/design.md` 附錄）
+- `sort=latest` 已於 2026-08 實測可用；不要用 `most_related` 搭配 light scan early termination，
+  否則第一頁可能長期停在舊但相關性高的職缺，導致新職缺進不來。
 - 無需登入、無 API key、未觀察到 rate limit；仍照禮貌規則走（同來源並發 ≤2、間隔 ≥1s、429 退避）
 - `robots.txt` 只禁止 `/r/*`，`/api/` 未禁止
 

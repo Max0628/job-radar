@@ -1,23 +1,23 @@
 # `flyway_schema_history`
 
-## Purpose
+## 用途
 
-Flyway's migration bookkeeping table. It is managed by Flyway and is not application business data.
+Flyway 的 migration bookkeeping table，由 Flyway 管理，不是 application business data。
 
-## Columns
+## 欄位
 
-| Column | Type | Nullable | Default | Description |
+| Column | Type | Nullable | Default | 說明 |
 |---|---|---:|---|---|
-| `installed_rank` | `INTEGER` | No | - | Ordering number assigned to an installed migration. |
-| `version` | `VARCHAR(50)` | Yes | - | Flyway migration version; repeatable migrations may not have a version. |
-| `description` | `VARCHAR(200)` | No | - | Human-readable migration description. |
-| `type` | `VARCHAR(20)` | No | - | Flyway migration type. |
-| `script` | `VARCHAR(1000)` | No | - | Migration script name/path recorded by Flyway. |
-| `checksum` | `INTEGER` | Yes | - | Checksum used by Flyway to detect changed migration files. |
-| `installed_by` | `VARCHAR(100)` | No | - | Database user that installed the migration. |
-| `installed_on` | `TIMESTAMP` | No | `now()` | Time the migration was installed. |
-| `execution_time` | `INTEGER` | No | - | Migration execution duration, in milliseconds. |
-| `success` | `BOOLEAN` | No | - | Whether the migration completed successfully. |
+| `installed_rank` | `INTEGER` | No | - | 已安裝 migration 的排序編號。 |
+| `version` | `VARCHAR(50)` | Yes | - | Flyway migration version；repeatable migration 可能沒有 version。 |
+| `description` | `VARCHAR(200)` | No | - | migration 的人類可讀描述。 |
+| `type` | `VARCHAR(20)` | No | - | Flyway migration type。 |
+| `script` | `VARCHAR(1000)` | No | - | Flyway 記錄的 migration script 名稱／路徑。 |
+| `checksum` | `INTEGER` | Yes | - | 用來偵測 migration 檔案是否被修改的 checksum。 |
+| `installed_by` | `VARCHAR(100)` | No | - | 執行 migration 的 database user。 |
+| `installed_on` | `TIMESTAMP` | No | `now()` | migration 安裝時間。 |
+| `execution_time` | `INTEGER` | No | - | migration 執行時間，單位是 milliseconds。 |
+| `success` | `BOOLEAN` | No | - | migration 是否成功完成。 |
 
 ## Constraints
 
@@ -27,8 +27,8 @@ Flyway's migration bookkeeping table. It is managed by Flyway and is not applica
 
 ## Indexes
 
-| Name | Definition | Purpose |
+| Name | Definition | 用途 |
 |---|---|---|
-| `flyway_schema_history_pk` | Unique B-tree on `installed_rank` | Migration ordering and primary-key lookup. |
-| `flyway_schema_history_s_idx` | B-tree on `(success)` | Flyway lookup of failed migrations. |
+| `flyway_schema_history_pk` | Unique B-tree on `installed_rank` | migration 排序與 primary key 查詢。 |
+| `flyway_schema_history_s_idx` | B-tree on `(success)` | Flyway 查詢失敗的 migration。 |
 
